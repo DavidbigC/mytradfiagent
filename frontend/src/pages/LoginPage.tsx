@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store";
-import { apiLogin, apiRegister } from "../api";
+import { apiLogin } from "../api";
 
 export default function LoginPage() {
-  const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -19,9 +17,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = isRegister
-        ? await apiRegister(username, password, displayName || undefined)
-        : await apiLogin(username, password);
+      const res = await apiLogin(username, password);
       login(res.token, res.user);
       navigate("/");
     } catch (err: any) {
@@ -46,14 +42,6 @@ export default function LoginPage() {
             required
             autoFocus
           />
-          {isRegister && (
-            <input
-              type="text"
-              placeholder="Display Name (optional)"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-          )}
           <input
             type="password"
             placeholder="Password"
@@ -63,16 +51,9 @@ export default function LoginPage() {
           />
           {error && <div className="error-msg">{error}</div>}
           <button type="submit" disabled={loading}>
-            {loading ? "..." : isRegister ? "Register" : "Sign In"}
+            {loading ? "..." : "Sign In"}
           </button>
         </form>
-
-        <p className="toggle-auth">
-          {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-          <span onClick={() => { setIsRegister(!isRegister); setError(""); }}>
-            {isRegister ? "Sign In" : "Register"}
-          </span>
-        </p>
       </div>
     </div>
   );

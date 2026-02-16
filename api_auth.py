@@ -7,10 +7,12 @@ from pydantic import BaseModel
 from db import get_pool
 from auth import hash_password, verify_password, create_access_token, get_current_user
 
+ADMIN_USERNAME = "davidc"
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-class RegisterBody(BaseModel):
+class CreateAccountBody(BaseModel):
     username: str
     password: str
     display_name: str | None = None
@@ -21,8 +23,12 @@ class LoginBody(BaseModel):
     password: str
 
 
-@router.post("/register")
-async def register(body: RegisterBody):
+@router.post("/create-account")
+async def create_account(body: CreateAccountBody, user: dict = Depends(get_current_user)):
+    """Admin-only: create a new account. Only davidc can do this."""
+    if user["username"] != ADMIN_USERNAME:
+        raise HTTPException(403, "Only admin can create accounts")
+
     username = body.username.strip()
     password = body.password
     if len(username) < 2 or len(password) < 6:
@@ -33,14 +39,12 @@ async def register(body: RegisterBody):
 
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Check username taken
         exists = await conn.fetchval(
             "SELECT 1 FROM web_accounts WHERE username = $1", username
         )
         if exists:
             raise HTTPException(409, "Username already taken")
 
-        # Create user + platform_account + web_account in transaction
         async with conn.transaction():
             user_id = await conn.fetchval(
                 "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
@@ -55,11 +59,7 @@ async def register(body: RegisterBody):
                 user_id, username, pw_hash,
             )
 
-    token = create_access_token(user_id, username)
-    return {
-        "token": token,
-        "user": {"user_id": str(user_id), "username": username, "display_name": display_name},
-    }
+    return {"user_id": str(user_id), "username": username, "display_name": display_name}
 
 
 @router.post("/login")
@@ -76,7 +76,6 @@ async def login(body: LoginBody):
     user_id: UUID = row["user_id"]
     username: str = row["username"]
 
-    # Update last_active
     pool = await get_pool()
     async with pool.acquire() as conn:
         display_name = await conn.fetchval(
