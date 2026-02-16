@@ -10,6 +10,7 @@ from config import WEB_PORT
 from db import init_db
 from api_auth import router as auth_router
 from api_chat import router as chat_router
+from api_admin import router as admin_router
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -39,6 +40,7 @@ app.add_middleware(
 # Mount API routers
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(admin_router)
 
 # Mount output directory for charts/PDFs
 output_dir = os.path.join(os.path.dirname(__file__), "output")

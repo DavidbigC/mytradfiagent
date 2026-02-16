@@ -50,6 +50,44 @@ export async function apiCreateAccount(token: string, username: string, password
   return res.json();
 }
 
+export async function fetchTables(token: string) {
+  const res = await fetch(`${BASE}/api/admin/tables`, { headers: headers(token) });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (res.status === 403) throw new Error("Admin only");
+  if (!res.ok) throw new Error("Failed to fetch tables");
+  return res.json();
+}
+
+export async function fetchTableInfo(token: string, table: string) {
+  const res = await fetch(`${BASE}/api/admin/tables/${table}`, { headers: headers(token) });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to fetch table info");
+  return res.json();
+}
+
+export async function fetchTableRows(token: string, table: string, limit = 50, offset = 0) {
+  const res = await fetch(`${BASE}/api/admin/tables/${table}/rows?limit=${limit}&offset=${offset}`, {
+    headers: headers(token),
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to fetch rows");
+  return res.json();
+}
+
+export async function runQuery(token: string, sql: string) {
+  const res = await fetch(`${BASE}/api/admin/query`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({ sql }),
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Query failed");
+  }
+  return res.json();
+}
+
 // --- Conversations ---
 
 export async function fetchConversations(token: string) {
