@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useAuth } from "../store";
+import AdminPanel from "./AdminPanel";
 
 interface Conversation {
   id: string;
@@ -18,6 +20,8 @@ interface Props {
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, open, onClose }: Props) {
   const { user, logout } = useAuth();
+  const [showAdmin, setShowAdmin] = useState(false);
+  const isAdmin = user?.username === "davidc";
 
   return (
     <>
@@ -48,9 +52,16 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
         <div className="sidebar-footer">
           <span className="user-name">{user?.display_name || user?.username}</span>
-          <button className="logout-btn" onClick={logout}>Logout</button>
+          <div className="sidebar-actions">
+            {isAdmin && (
+              <button className="admin-btn" onClick={() => setShowAdmin(true)}>Admin</button>
+            )}
+            <button className="logout-btn" onClick={logout}>Logout</button>
+          </div>
         </div>
       </aside>
+
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
     </>
   );
 }

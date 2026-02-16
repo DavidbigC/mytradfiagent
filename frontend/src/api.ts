@@ -34,6 +34,22 @@ export async function apiLogin(username: string, password: string) {
   return res.json();
 }
 
+// --- Admin ---
+
+export async function apiCreateAccount(token: string, username: string, password: string, displayName?: string) {
+  const res = await fetch(`${BASE}/api/auth/create-account`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({ username, password, display_name: displayName }),
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to create account");
+  }
+  return res.json();
+}
+
 // --- Conversations ---
 
 export async function fetchConversations(token: string) {

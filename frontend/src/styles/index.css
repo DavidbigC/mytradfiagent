@@ -270,6 +270,112 @@ html, body, #root {
   color: var(--error);
 }
 
+.sidebar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-btn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Admin Panel */
+.admin-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.admin-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.admin-close:hover {
+  color: var(--text-primary);
+}
+
+.admin-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-panel input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.admin-panel input:focus {
+  border-color: var(--accent);
+}
+
+.admin-panel button[type="submit"] {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-panel button[type="submit"]:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.success-msg {
+  color: var(--success);
+  font-size: 0.85rem;
+}
+
 /* Chat Main */
 .chat-main {
   flex: 1;
