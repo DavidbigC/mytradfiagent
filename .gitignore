@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+output/
+frontend/node_modules/
+frontend/dist/
+.claude/

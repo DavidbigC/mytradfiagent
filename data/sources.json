@@ -1,0 +1,180 @@
+{
+  "sources": [
+    {
+      "id": "sina_dividend",
+      "name": "新浪财经 - 分红配股",
+      "category": "cn_stock",
+      "data_type": "dividend",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml",
+      "params": {"code": "6-digit A-share stock code (e.g. 601229)"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/601229.phtml",
+      "notes": "Complete dividend history with dates, amounts, ex-dividend dates. Reliable and fast.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sina_financials",
+      "name": "新浪财经 - 财务指标",
+      "category": "cn_stock",
+      "data_type": "financials",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vFD_FinancialGuideLine/stockid/{code}/displaytype/4.phtml",
+      "params": {"code": "6-digit A-share stock code"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vFD_FinancialGuideLine/stockid/601229/displaytype/4.phtml",
+      "notes": "Key financial metrics: ROE, EPS, revenue growth, etc.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sina_company_info",
+      "name": "新浪财经 - 公司资料",
+      "category": "cn_stock",
+      "data_type": "company_profile",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vCI_CorpInfo/stockid/{code}.phtml",
+      "params": {"code": "6-digit A-share stock code"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vCI_CorpInfo/stockid/601229.phtml",
+      "notes": "Company profile, business description, registration info.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sina_shareholders",
+      "name": "新浪财经 - 股东信息",
+      "category": "cn_stock",
+      "data_type": "shareholders",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vCI_StockHolder/stockid/{code}.phtml",
+      "params": {"code": "6-digit A-share stock code"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vCI_StockHolder/stockid/601229.phtml",
+      "notes": "Top 10 shareholders, institutional holdings.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sina_income_statement",
+      "name": "新浪财经 - 利润表",
+      "category": "cn_stock",
+      "data_type": "income_statement",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vFD_ProfitStatement/stockid/{code}/ctrl/part/displaytype/4.phtml",
+      "params": {"code": "6-digit A-share stock code"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vFD_ProfitStatement/stockid/601229/ctrl/part/displaytype/4.phtml",
+      "notes": "Quarterly/annual income statement.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sina_balance_sheet",
+      "name": "新浪财经 - 资产负债表",
+      "category": "cn_stock",
+      "data_type": "balance_sheet",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/{code}/ctrl/part/displaytype/4.phtml",
+      "params": {"code": "6-digit A-share stock code"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/601229/ctrl/part/displaytype/4.phtml",
+      "notes": "Quarterly/annual balance sheet.",
+      "added_by": "manual"
+    },
+    {
+      "id": "eastmoney_fund_overview",
+      "name": "天天基金 - 基金概况",
+      "category": "cn_fund",
+      "data_type": "fund_overview",
+      "url_pattern": "https://fund.eastmoney.com/{code}.html",
+      "params": {"code": "fund code (e.g. 512890)"},
+      "example": "https://fund.eastmoney.com/512890.html",
+      "notes": "Fund NAV, top 10 holdings, performance, manager info. Holdings updated to latest quarter.",
+      "added_by": "manual"
+    },
+    {
+      "id": "eastmoney_fund_holdings",
+      "name": "天天基金 - 持仓明细",
+      "category": "cn_fund",
+      "data_type": "fund_holdings",
+      "url_pattern": "https://fundf10.eastmoney.com/ccmx_{code}.html",
+      "params": {"code": "fund code (e.g. 512890)"},
+      "example": "https://fundf10.eastmoney.com/ccmx_512890.html",
+      "notes": "Detailed fund holdings across multiple quarters.",
+      "added_by": "manual"
+    },
+    {
+      "id": "eastmoney_fund_dividend",
+      "name": "天天基金 - 基金分红",
+      "category": "cn_fund",
+      "data_type": "fund_dividend",
+      "url_pattern": "https://fundf10.eastmoney.com/fhsp_{code}.html",
+      "params": {"code": "fund code (e.g. 512890)"},
+      "example": "https://fundf10.eastmoney.com/fhsp_512890.html",
+      "notes": "Fund dividend history and split records.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sec_edgar_13f",
+      "name": "SEC EDGAR - 13F Filings",
+      "category": "us_fund",
+      "data_type": "fund_holdings",
+      "url_pattern": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type=13F-HR&dateb=&owner=include&count=5",
+      "params": {"cik": "SEC CIK number (e.g. 0001067983 for Berkshire Hathaway)"},
+      "example": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001067983&type=13F-HR&dateb=&owner=include&count=5",
+      "notes": "US institutional fund holdings from 13F filings. Updated quarterly.",
+      "added_by": "manual"
+    },
+    {
+      "id": "wsj_market_overview",
+      "name": "WSJ - Market Overview",
+      "category": "global",
+      "data_type": "market_overview",
+      "url_pattern": "https://www.wsj.com/market-data",
+      "params": {},
+      "example": "https://www.wsj.com/market-data",
+      "notes": "Global market indices, commodities, currencies overview.",
+      "added_by": "manual"
+    },
+    {
+      "id": "eastmoney_stock_quote",
+      "name": "东方财富 - 个股行情",
+      "category": "cn_stock",
+      "data_type": "quote",
+      "url_pattern": "https://quote.eastmoney.com/{market_prefix}{code}.html",
+      "params": {"market_prefix": "sh for Shanghai (6xxxxx), sz for Shenzhen (0xxxxx/3xxxxx)", "code": "6-digit stock code"},
+      "example": "https://quote.eastmoney.com/sh601229.html",
+      "notes": "Real-time quote, PE, PB, market cap, dividend yield. For quick single-stock lookup. But prefer fetch_cn_stock_data API tool for quotes — it's faster.",
+      "added_by": "manual"
+    },
+    {
+      "id": "sina_cash_flow",
+      "name": "新浪财经 - 现金流量表",
+      "category": "cn_stock",
+      "data_type": "cash_flow",
+      "url_pattern": "https://money.finance.sina.com.cn/corp/go.php/vFD_CashFlow/stockid/{code}/ctrl/part/displaytype/4.phtml",
+      "params": {"code": "6-digit A-share stock code"},
+      "example": "https://money.finance.sina.com.cn/corp/go.php/vFD_CashFlow/stockid/601229/ctrl/part/displaytype/4.phtml",
+      "notes": "Quarterly/annual cash flow statement.",
+      "added_by": "manual"
+    },
+    {
+      "id": "eastmoney_stock_pe",
+      "name": "东方财富 - 估值分析",
+      "category": "cn_stock",
+      "data_type": "valuation",
+      "url_pattern": "https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code={market_prefix}{code}&color=w#/gszl",
+      "params": {"market_prefix": "SH for Shanghai, SZ for Shenzhen", "code": "6-digit stock code"},
+      "example": "https://emweb.securities.eastmoney.com/pc_hsf10/pages/index.html?type=web&code=SH601229&color=w#/gszl",
+      "notes": "PE, PB, ROE, dividend yield, market cap. Comprehensive valuation page.",
+      "added_by": "manual"
+    },
+    {
+      "id": "xueqiu_stock",
+      "name": "雪球 - 个股页面",
+      "category": "cn_stock",
+      "data_type": "quote",
+      "url_pattern": "https://xueqiu.com/S/{market_prefix}{code}",
+      "params": {"market_prefix": "SH for Shanghai, SZ for Shenzhen", "code": "6-digit stock code"},
+      "example": "https://xueqiu.com/S/SH601229",
+      "notes": "Real-time price, PE, PB, dividend yield, financials summary, and investor discussions.",
+      "added_by": "manual"
+    },
+    {
+      "id": "cn_stock_code_map",
+      "name": "常用A股代码映射",
+      "category": "cn_stock",
+      "data_type": "reference",
+      "url_pattern": "none",
+      "params": {},
+      "example": "none",
+      "notes": "招商银行=600036, 工商银行=601398, 上海银行=601229, 建设银行=601939, 农业银行=601288, 中国银行=601988, 贵州茅台=600519, 五粮液=000858, 中国平安=601318, 格力电器=000651, 美的集团=000333, 宁德时代=300750, 比亚迪=002594",
+      "added_by": "manual"
+    }
+  ]
+}
