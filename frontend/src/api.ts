@@ -130,7 +130,7 @@ export async function deleteConversation(token: string, convId: string) {
 
 export interface SSECallbacks {
   onStatus: (text: string) => void;
-  onDone: (data: { text: string; files: string[]; references: Array<{ num: string; name: string; url: string }> }) => void;
+  onDone: (data: { text: string; files: string[]; references: Array<{ num: string; url: string }> }) => void;
   onError: (error: string) => void;
 }
 

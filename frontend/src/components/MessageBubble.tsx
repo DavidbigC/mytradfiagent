@@ -4,7 +4,6 @@ import ReferenceCard from "./ReferenceCard";
 
 interface Ref {
   num: string;
-  name: string;
   url: string;
 }
 

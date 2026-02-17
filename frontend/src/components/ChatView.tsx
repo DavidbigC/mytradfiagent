@@ -5,22 +5,25 @@ import MessageBubble from "./MessageBubble";
 import StatusIndicator from "./StatusIndicator";
 
 const REF_PATTERN = /\[references\]\s*\n([\s\S]*?)\n\s*\[\/references\]/i;
-const REF_LINE = /\[(\d+)\]\s*(.+?)\s*\|\s*(\S+)/;
-const REF_LINE_NO_URL = /\[(\d+)\]\s*(.+)/;
+const REF_LINE_URL = /\[(\d+)\]\s*(https?:\/\/\S+)/;
+const REF_LINE_PIPE = /\[(\d+)\]\s*.+?\|\s*(https?:\/\/\S+)/;
+const REF_LINE_ANY = /\[(\d+)\]\s*(.+)/;
 
-function parseReferences(text: string): { cleaned: string; refs: Array<{ num: string; name: string; url: string }> } {
+function parseReferences(text: string): { cleaned: string; refs: Array<{ num: string; url: string }> } {
   const match = text.match(REF_PATTERN);
   if (!match) return { cleaned: text, refs: [] };
-  const refs: Array<{ num: string; name: string; url: string }> = [];
+  const refs: Array<{ num: string; url: string }> = [];
   for (const line of match[1].trim().split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const m = trimmed.match(REF_LINE);
+    let m = trimmed.match(REF_LINE_URL);
+    if (m) { refs.push({ num: m[1], url: m[2].trim() }); continue; }
+    m = trimmed.match(REF_LINE_PIPE);
+    if (m) { refs.push({ num: m[1], url: m[2].trim() }); continue; }
+    m = trimmed.match(REF_LINE_ANY);
     if (m) {
-      refs.push({ num: m[1], name: m[2].trim(), url: m[3].trim() });
-    } else {
-      const m2 = trimmed.match(REF_LINE_NO_URL);
-      if (m2) refs.push({ num: m2[1], name: m2[2].trim(), url: "(tool data)" });
+      const urlMatch = m[2].match(/https?:\/\/\S+/);
+      if (urlMatch) refs.push({ num: m[1], url: urlMatch[0].trim() });
     }
   }
   const cleaned = text.slice(0, match.index).trimEnd() + text.slice(match.index! + match[0].length);
@@ -29,7 +32,6 @@ function parseReferences(text: string): { cleaned: string; refs: Array<{ num: st
 
 interface Ref {
   num: string;
-  name: string;
   url: string;
 }
 

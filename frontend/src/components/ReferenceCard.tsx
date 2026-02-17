@@ -1,6 +1,5 @@
 interface Ref {
   num: string;
-  name: string;
   url: string;
 }
 
@@ -9,20 +8,18 @@ interface Props {
 }
 
 export default function ReferenceCard({ references }: Props) {
-  if (!references.length) return null;
+  const validRefs = references.filter((r) => r.url && r.url.startsWith("http"));
+  if (!validRefs.length) return null;
 
   return (
     <div className="reference-card">
       <div className="ref-header">References</div>
-      {references.map((r) => (
+      {validRefs.map((r) => (
         <div key={r.num} className="ref-item">
           <span className="ref-num">[{r.num}]</span>
-          <span className="ref-name">{r.name}</span>
-          {r.url && r.url !== "(tool data)" && (
-            <a href={r.url} target="_blank" rel="noopener noreferrer" className="ref-url">
-              {r.url.length > 60 ? r.url.slice(0, 60) + "..." : r.url}
-            </a>
-          )}
+          <a href={r.url} target="_blank" rel="noopener noreferrer" className="ref-url">
+            {r.url.length > 80 ? r.url.slice(0, 80) + "..." : r.url}
+          </a>
         </div>
       ))}
     </div>

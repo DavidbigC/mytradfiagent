@@ -266,15 +266,16 @@ _REF_PATTERN = re.compile(
     r"\[references\]\s*\n(.*?)\n\s*\[/references\]",
     re.DOTALL | re.IGNORECASE,
 )
-_REF_LINE = re.compile(r"\[(\d+)\]\s*(.+?)\s*\|\s*(\S+)")
-_REF_LINE_NO_URL = re.compile(r"\[(\d+)\]\s*(.+)")
+_REF_LINE_URL_ONLY = re.compile(r"\[(\d+)\]\s*(https?://\S+)")
+_REF_LINE_WITH_NAME = re.compile(r"\[(\d+)\]\s*(.+?)\s*\|\s*(https?://\S+)")
+_REF_LINE_FALLBACK = re.compile(r"\[(\d+)\]\s*(.+)")
 
 
 def parse_references(text: str) -> tuple[str, list[dict]]:
     """Extract [references]...[/references] block from text.
 
     Returns (cleaned_text, references_list) where references_list is
-    [{"num": "1", "name": "Source", "url": "https://..."}, ...]
+    [{"num": "1", "url": "https://..."}, ...]
     """
     match = _REF_PATTERN.search(text)
     if not match:
@@ -285,14 +286,24 @@ def parse_references(text: str) -> tuple[str, list[dict]]:
         line = line.strip()
         if not line:
             continue
-        m = _REF_LINE.match(line)
+        # Try: [1] https://url.com
+        m = _REF_LINE_URL_ONLY.match(line)
         if m:
-            refs.append({"num": m.group(1), "name": m.group(2).strip(), "url": m.group(3).strip()})
-        else:
-            # Fallback: line without URL (e.g. "[1] TradingView Scanner API")
-            m2 = _REF_LINE_NO_URL.match(line)
-            if m2:
-                refs.append({"num": m2.group(1), "name": m2.group(2).strip(), "url": "(tool data)"})
+            refs.append({"num": m.group(1), "url": m.group(2).strip()})
+            continue
+        # Try: [1] Name | https://url.com
+        m = _REF_LINE_WITH_NAME.match(line)
+        if m:
+            refs.append({"num": m.group(1), "url": m.group(3).strip()})
+            continue
+        # Fallback: [1] anything — check if it contains a URL somewhere
+        m = _REF_LINE_FALLBACK.match(line)
+        if m:
+            content = m.group(2).strip()
+            url_match = re.search(r"https?://\S+", content)
+            if url_match:
+                refs.append({"num": m.group(1), "url": url_match.group(0).strip()})
+            # Skip lines with no URL at all
 
     cleaned = text[:match.start()].rstrip() + text[match.end():]
     cleaned = cleaned.rstrip()

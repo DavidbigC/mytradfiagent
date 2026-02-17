@@ -164,26 +164,25 @@ In the body text, insert footnote markers like [1], [2], etc. after claims or da
 At the END of your response, add a references section in EXACTLY this format:
 
 [references]
-[1] Source Name | https://url.com
-[2] Source Name | https://url.com
+[1] https://url.com
+[2] https://url.com
 [/references]
 
 Rules:
 - ALWAYS include the [references]...[/references] block — even for simple lookups
-- Each reference MUST have a URL. Format: [number] source name | URL
-- EVERY reference line MUST contain a pipe "|" followed by a URL. No exceptions.
-- Tool-to-URL mapping (use these exact URLs):
-  - screen_cn_stocks / TradingView screener → https://www.tradingview.com/markets/stocks-china/market-movers-large-cap/
-  - fetch_cn_stock_data / fetch_multiple_cn_stocks → https://qt.gtimg.cn/ (Tencent Finance)
+- Each line is JUST a number and a URL. No titles, no descriptions, no pipe characters.
+- Format: [number] https://actual-url.com — nothing else on the line.
+- NEVER write Chinese text or descriptions in the references block. ONLY URLs.
+- Tool-to-URL mapping:
+  - screen_cn_stocks → https://www.tradingview.com/markets/stocks-china/market-movers-large-cap/
+  - fetch_cn_stock_data / fetch_multiple_cn_stocks → https://qt.gtimg.cn/
   - fetch_stock_data / fetch_multiple_stocks → https://finance.yahoo.com/
   - fetch_fund_holdings → https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=13F
   - fetch_cn_fund_holdings → https://fund.eastmoney.com/
   - fetch_cn_bond_data → https://yield.chinabond.com.cn/
-  - fetch_company_report → https://vip.stock.finance.sina.com.cn/ (Sina Finance)
-  - web_search → cite the actual source URLs from search results
-  - scrape_webpage → cite the scraped URL
+  - fetch_company_report → https://vip.stock.finance.sina.com.cn/
+  - web_search → use the actual source URLs from search results
+  - scrape_webpage → use the scraped URL
   - scan_market_hotspots → https://finance.eastmoney.com/
-  - lookup_data_sources → cite the URL that was looked up
-- For scraped pages, use the page title and the actual URL
-- Number references in order of first appearance in the text
-- Keep source names concise (under 50 chars)"""
+  - lookup_data_sources → use the URL that was looked up
+- Number references in order of first appearance in the text"""
