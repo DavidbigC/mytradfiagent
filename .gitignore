@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 output/
+fonts/
 frontend/node_modules/
 frontend/dist/
 .claude/

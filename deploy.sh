@@ -13,7 +13,7 @@ echo "=== Financial Research Agent — Server Setup ==="
 echo "[1/7] Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq python3 python3-pip python3-venv nodejs npm postgresql postgresql-contrib \
-    libpq-dev build-essential curl git fonts-noto-cjk > /dev/null
+    libpq-dev build-essential curl git fonts-noto-cjk fonts-wqy-microhei > /dev/null
 
 # 2. PostgreSQL setup
 echo "[2/7] Setting up PostgreSQL..."

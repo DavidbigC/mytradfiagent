@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-02-17 — Professional PDF generation with Chinese font support
+
+**What:** Rewrote PDF generation to render Chinese text correctly on Linux servers and produce professionally formatted reports.
+
+**Files:**
+- `tools/output.py` — modified: new CJK font resolution (macOS + Linux paths + auto-download fallback), professional layout with navy header band, color hierarchy, proper table rendering with borders/shading/alternating rows, page footers, bullet points, bold stripping
+- `deploy.sh` — modified: added `fonts-wqy-microhei` to apt packages
+- `.gitignore` — modified: added `fonts/` directory
+
+**Details:**
+- Font search order: bundled NotoSansSC → macOS system fonts → Linux packages (noto-cjk, wqy-microhei, wqy-zenhei) → auto-download from Google Fonts as last resort
+- PDF styling: dark navy header band with white title, steel blue section headings with underline rules, proper markdown table rendering with calculated column widths, alternating row colors, page number footers
+- Tables handle cell overflow by truncating with ellipsis
+- Long titles auto-wrap in header band
+- Matplotlib Chinese font candidates also updated to include Linux fonts (Noto Sans CJK SC, WenQuanYi)
+
 ## 2026-02-15 — Comprehensive TradingView Scanner API field investigation
 
 **What:** Tested 72+ TradingView Scanner API fields across 8 categories, documented all working/null fields, expanded the `screen_cn_stocks` tool with new columns, and rewrote `tradingview_data_sources.md`.
