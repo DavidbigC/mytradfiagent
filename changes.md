@@ -1,5 +1,38 @@
 # Changes
 
+## 2026-02-17 — EastMoney structured data tools (financials, shareholders, dragon tiger, dividends)
+
+**What:** Added 4 new tools using EastMoney datacenter APIs for structured financial data — financial statements, top shareholders, dragon tiger list, and dividend history. Updated system prompt to use structured APIs instead of web scraping for deep stock analysis.
+
+**Files:**
+- `tools/cn_eastmoney.py` — created: 4 tool functions (fetch_stock_financials, fetch_top_shareholders, fetch_dragon_tiger, fetch_dividend_history)
+- `tools/__init__.py` — modified: registered 4 new tools + schemas (now 24 tools total)
+- `config.py` — modified: added tools #14-17 to priority list, replaced old scrape-based routing for dividends/financials with direct API tools, updated deep analysis step to use structured financials + shareholders + capital flow + dividends in parallel (6 parallel calls), updated comparison routing, added citation URL mappings
+
+**Details:**
+- `fetch_stock_financials` — balance sheet, income statement, or cash flow. 10+ years of quarterly data from EastMoney datacenter API. Fields: revenue, net profit, YoY growth, assets, liabilities, debt ratio, operating/investing/financing cash flows.
+- `fetch_top_shareholders` — top 10 circulating shareholders (十大流通股东) with holding changes (新进/增持/减持/不变). Grouped by reporting period.
+- `fetch_dragon_tiger` — broker-level buy/sell data on exceptional trading days (涨跌停, 振幅>7%). Both buy-side and sell-side entries merged chronologically.
+- `fetch_dividend_history` — complete dividend history with cash per 10 shares, bonus shares, ex-dividend dates, distribution progress, and EPS. Includes summary stats.
+- Deep analysis now fetches 6 data sources in parallel: income statement (8 periods), balance sheet (4 periods), quote, capital flow (20 days), top shareholders (2 periods), dividend history.
+- Old scraping-based routes for dividends/financials replaced with direct API calls.
+
+## 2026-02-17 — Capital flow tools (资金流向)
+
+**What:** Added 3 new tools for tracking institutional vs retail capital flow in Chinese A-shares, using EastMoney APIs.
+
+**Files:**
+- `tools/cn_capital_flow.py` — created: 3 tool functions (fetch_stock_capital_flow, fetch_northbound_flow, fetch_capital_flow_ranking)
+- `tools/__init__.py` — modified: registered 3 new tools + schemas (now 20 tools total)
+- `config.py` — modified: added tools to priority list (#11-13), added routing rules for capital flow queries, updated deep analysis rule to include capital flow, added citation URL mappings
+
+**Details:**
+- `fetch_stock_capital_flow` — daily capital flow for a single stock (~120 trading days / 6 months). Breaks down by order size: super-large (>100万, institutional), large (20-100万), medium (4-20万), small (<4万, retail). Includes period summary (total net, buy/sell day count).
+- `fetch_northbound_flow` — Stock Connect (沪深港通) daily deal volume. Note: net inflow/outflow data was discontinued after Aug 2024 due to regulatory changes. Deal amount and count still available.
+- `fetch_capital_flow_ranking` — top stocks ranked by institutional net inflow or outflow. Shows which stocks institutions are buying/selling most heavily.
+- System prompt updated: when user asks about a specific stock ("最近怎么样", "analyze X"), agent now fetches capital flow alongside financial reports and quote data in parallel.
+- All APIs are free, no auth, direct HTTP to EastMoney endpoints.
+
 ## 2026-02-17 — Code review: bug fixes and simplification
 
 **What:** Fixed critical conversation routing bug, removed broken/dead code, consolidated duplicated code.
@@ -151,3 +184,43 @@
 - If TELEGRAM_BOT_TOKEN is not set, only the web server runs (no error)
 - Frontend auto-builds only when src/ files are newer than dist/
 - Parchment theme: warm off-white backgrounds, dark brown text, golden-brown accent (#8b6914), serif typography for a document/research feel
+
+## 2026-02-17 — Research: free APIs for China A-share order flow / capital flow data
+
+**What:** Investigated 6 data sources for buyer/seller order flow (买卖盘, 资金流向, 主力资金) for China A-share stocks, documenting endpoints, data returned, and authentication requirements.
+
+**Files:**
+- `changes.md` — modified (this entry)
+
+**Details:**
+- Best option for integration: EastMoney push2 direct HTTP API (no auth, JSON, real-time capital flow by order size) or AKShare library (wraps EastMoney/Sina, pip install, no API key)
+- Sina Finance hq.sinajs.cn provides free 5-level order book but requires Referer header spoofing
+- TradingView Scanner has no capital flow fields for China A-shares
+- Tushare requires registration + API token (not truly free/anonymous)
+- Full details in research summary provided to user
+
+## 2026-02-17 — Comprehensive EastMoney data sub-pages API endpoint investigation
+
+**What:** Systematically investigated all 20 data sub-pages on EastMoney for individual Chinese A-share stocks, testing API endpoints to find working JSON data sources. Created comprehensive documentation of 14 verified working endpoints across 6 categories.
+
+**Files:**
+- `EASTMONEY_API_ENDPOINTS.md` — created: Complete API documentation with endpoint URLs, parameters, response formats, field descriptions, and usage examples
+
+**Details:**
+- Tested stock code 600173 (卧龙新能) across 20 different data categories
+- Successfully identified 14 working API endpoints:
+  - Market Data (5 endpoints): Real-time quote, intraday tick data, K-line/OHLC, main force capital flow, stock fund flow details
+  - Trading Intelligence (2 endpoints): Dragon Tiger List buy/sell sides (异动营业部交易)
+  - Financial Statements (3 endpoints): Balance sheet, income statement, cash flow statement
+  - Shareholding (2 endpoints): Top 10 circulating shareholders, top 10 total shareholders
+  - Corporate Actions (1 endpoint): Dividends and share bonus distributions
+  - Company Info (1 endpoint): Core themes/concepts classification
+- Two API types discovered:
+  - `datacenter-web.eastmoney.com/api/data/v1/get` - Structured financial/corporate data with report names
+  - `push2.eastmoney.com` / `push2his.eastmoney.com` - Real-time and historical market data
+- Financial statements provide 10+ years of quarterly/annual data (104 records for balance sheet)
+- Dragon Tiger List tracks major institutional broker buy/sell transactions on exceptional trading days (412+ records)
+- Shareholder data shows top 10 holders with holding changes across multiple reporting periods (920+ records)
+- Documentation includes: field counts, sample data, value ratings (HIGH/MEDIUM), Python usage examples, stock code format specifications
+- Missing/unavailable: 15 data types could not be found via API (announcements, stock calendar, margin trading, block trades, executive holdings, research reports, etc.) - may require scraping or authentication
+- Recommended priority: 8 HIGH-value endpoints identified for immediate agent tool integration

@@ -18,6 +18,15 @@ from tools.sources import (
 from tools.market_scan import scan_market_hotspots, SCAN_MARKET_HOTSPOTS_SCHEMA
 from tools.cn_screener import screen_cn_stocks, SCREEN_CN_STOCKS_SCHEMA
 from tools.sina_reports import fetch_company_report, FETCH_COMPANY_REPORT_SCHEMA
+from tools.cn_capital_flow import (
+    fetch_stock_capital_flow, fetch_northbound_flow, fetch_capital_flow_ranking,
+    FETCH_STOCK_CAPITAL_FLOW_SCHEMA, FETCH_NORTHBOUND_FLOW_SCHEMA, FETCH_CAPITAL_FLOW_RANKING_SCHEMA,
+)
+from tools.cn_eastmoney import (
+    fetch_stock_financials, fetch_top_shareholders, fetch_dragon_tiger, fetch_dividend_history,
+    FETCH_STOCK_FINANCIALS_SCHEMA, FETCH_TOP_SHAREHOLDERS_SCHEMA,
+    FETCH_DRAGON_TIGER_SCHEMA, FETCH_DIVIDEND_HISTORY_SCHEMA,
+)
 
 TOOL_SCHEMAS = [
     LOOKUP_DATA_SOURCES_SCHEMA,
@@ -37,6 +46,13 @@ TOOL_SCHEMAS = [
     SCAN_MARKET_HOTSPOTS_SCHEMA,
     SCREEN_CN_STOCKS_SCHEMA,
     FETCH_COMPANY_REPORT_SCHEMA,
+    FETCH_STOCK_CAPITAL_FLOW_SCHEMA,
+    FETCH_NORTHBOUND_FLOW_SCHEMA,
+    FETCH_CAPITAL_FLOW_RANKING_SCHEMA,
+    FETCH_STOCK_FINANCIALS_SCHEMA,
+    FETCH_TOP_SHAREHOLDERS_SCHEMA,
+    FETCH_DRAGON_TIGER_SCHEMA,
+    FETCH_DIVIDEND_HISTORY_SCHEMA,
 ]
 
 TOOL_MAP = {
@@ -57,6 +73,13 @@ TOOL_MAP = {
     "scan_market_hotspots": scan_market_hotspots,
     "screen_cn_stocks": screen_cn_stocks,
     "fetch_company_report": fetch_company_report,
+    "fetch_stock_capital_flow": fetch_stock_capital_flow,
+    "fetch_northbound_flow": fetch_northbound_flow,
+    "fetch_capital_flow_ranking": fetch_capital_flow_ranking,
+    "fetch_stock_financials": fetch_stock_financials,
+    "fetch_top_shareholders": fetch_top_shareholders,
+    "fetch_dragon_tiger": fetch_dragon_tiger,
+    "fetch_dividend_history": fetch_dividend_history,
 }
 
 
