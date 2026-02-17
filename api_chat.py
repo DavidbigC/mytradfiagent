@@ -98,19 +98,17 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
     if not message:
         raise HTTPException(400, "Empty message")
 
-    # If conversation_id provided, set it as active by updating its timestamp
+    # Validate conversation ownership if a specific conversation is targeted
+    target_conv_id: UUID | None = None
     if body.conversation_id:
+        target_conv_id = UUID(body.conversation_id)
         pool = await get_pool()
-        cid = UUID(body.conversation_id)
         async with pool.acquire() as conn:
             owner = await conn.fetchval(
-                "SELECT user_id FROM conversations WHERE id = $1", cid
+                "SELECT user_id FROM conversations WHERE id = $1", target_conv_id
             )
             if owner != user_id:
                 raise HTTPException(403, "Not your conversation")
-            await conn.execute(
-                "UPDATE conversations SET updated_at = now() WHERE id = $1", cid
-            )
 
     queue: asyncio.Queue[dict] = asyncio.Queue()
 
@@ -119,7 +117,7 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
 
     async def run_in_background():
         try:
-            result = await run_agent(message, user_id, on_status=on_status)
+            result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id)
             text = result.get("text", "")
             files = result.get("files", [])
 

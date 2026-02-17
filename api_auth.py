@@ -6,8 +6,7 @@ from pydantic import BaseModel
 
 from db import get_pool
 from auth import hash_password, verify_password, create_access_token, get_current_user
-
-ADMIN_USERNAME = "davidc"
+from config import ADMIN_USERNAME
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -70,14 +69,12 @@ async def login(body: LoginBody):
             "SELECT user_id, username, password_hash FROM web_accounts WHERE username = $1",
             body.username.strip(),
         )
-    if not row or not verify_password(body.password, row["password_hash"]):
-        raise HTTPException(401, "Invalid username or password")
+        if not row or not verify_password(body.password, row["password_hash"]):
+            raise HTTPException(401, "Invalid username or password")
 
-    user_id: UUID = row["user_id"]
-    username: str = row["username"]
+        user_id: UUID = row["user_id"]
+        username: str = row["username"]
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
         display_name = await conn.fetchval(
             "UPDATE users SET last_active_at = now() WHERE id = $1 RETURNING display_name",
             user_id,

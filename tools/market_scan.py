@@ -102,35 +102,12 @@ async def _get_industry_boards(client: httpx.AsyncClient, top_n: int = 15) -> li
     ]
 
 
-async def _get_top_gainers(client: httpx.AsyncClient, top_n: int = 10) -> list[dict]:
-    """Top gaining individual stocks today."""
+async def _get_top_movers(client: httpx.AsyncClient, direction: str = "gainers", top_n: int = 10) -> list[dict]:
+    """Top gaining or losing individual stocks today. direction: 'gainers' or 'losers'."""
+    po = "1" if direction == "gainers" else "0"
     url = (
         f"https://push2.eastmoney.com/api/qt/clist/get?"
-        f"pn=1&pz={top_n}&po=1&np=1&ut={_EM_UT}&fltt=2&invt=2&fid=f3"
-        f"&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
-        f"&fields=f2,f3,f4,f8,f12,f14"
-    )
-    data = await _fetch_json(client, url)
-    if not data or not data.get("data"):
-        return []
-    diff = data["data"].get("diff", {})
-    items = list(diff.values()) if isinstance(diff, dict) else diff
-    return [
-        {
-            "name": item.get("f14"),
-            "code": item.get("f12"),
-            "price": item.get("f2"),
-            "change_pct": item.get("f3"),
-        }
-        for item in items[:top_n]
-    ]
-
-
-async def _get_top_losers(client: httpx.AsyncClient, top_n: int = 10) -> list[dict]:
-    """Top losing individual stocks today."""
-    url = (
-        f"https://push2.eastmoney.com/api/qt/clist/get?"
-        f"pn=1&pz={top_n}&po=0&np=1&ut={_EM_UT}&fltt=2&invt=2&fid=f3"
+        f"pn=1&pz={top_n}&po={po}&np=1&ut={_EM_UT}&fltt=2&invt=2&fid=f3"
         f"&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
         f"&fields=f2,f3,f4,f8,f12,f14"
     )
@@ -158,8 +135,8 @@ async def scan_market_hotspots() -> dict:
             _get_indices(client),
             _get_concept_boards(client),
             _get_industry_boards(client),
-            _get_top_gainers(client),
-            _get_top_losers(client),
+            _get_top_movers(client, "gainers"),
+            _get_top_movers(client, "losers"),
         )
 
     return {

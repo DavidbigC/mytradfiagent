@@ -12,6 +12,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/myaiagent")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "davidc")
 
 
 def get_system_prompt() -> str:

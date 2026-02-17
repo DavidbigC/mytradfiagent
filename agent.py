@@ -60,25 +60,28 @@ async def run_agent(
     user_message: str,
     user_id: UUID,
     on_status: Callable | None = None,
+    conversation_id: UUID | None = None,
 ) -> dict:
     """Run the agent loop. Returns {"text": str, "files": [path, ...]}.
 
     Loads history from DB, saves all messages to DB, and acquires a per-user
     lock so concurrent messages from the same user are serialized.
 
+    conversation_id: if provided, use this conversation; otherwise use the most recent one.
     on_status: optional async callback(status_text: str) called with progress updates.
     """
     lock = get_user_lock(user_id)
     async with lock:
-        return await _run_agent_inner(user_message, user_id, on_status)
+        return await _run_agent_inner(user_message, user_id, on_status, conversation_id)
 
 
 async def _run_agent_inner(
     user_message: str,
     user_id: UUID,
     on_status: Callable | None = None,
+    conversation_id: UUID | None = None,
 ) -> dict:
-    conv_id = await get_active_conversation(user_id)
+    conv_id = conversation_id or await get_active_conversation(user_id)
 
     # Load recent history from DB
     messages = await load_recent_messages(conv_id)

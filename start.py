@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import subprocess
-import sys
 
 import uvicorn
 from config import TELEGRAM_BOT_TOKEN, WEB_PORT

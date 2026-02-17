@@ -5,8 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db import get_pool
 from auth import get_current_user
-
-ADMIN_USERNAME = "davidc"
+from config import ADMIN_USERNAME
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

@@ -1,6 +1,7 @@
 import asyncio
 import akshare as ak
 from tools.cache import cached
+from tools.utils import safe_value
 
 TOOL_TIMEOUT = 30
 
@@ -36,7 +37,7 @@ def _fetch_cn_fund_holdings_sync(fund_code: str, year: str) -> dict:
         records = df.head(20).to_dict(orient="records")
         for r in records:
             for k, v in r.items():
-                r[k] = _safe_value(v)
+                r[k] = safe_value(v)
 
         return {"fund_code": fund_code, "year": year, "holdings": records}
     except Exception as e:
@@ -54,9 +55,3 @@ async def fetch_cn_fund_holdings(fund_code: str, year: str) -> dict:
         return {"error": f"Timeout fetching fund {fund_code} (>{TOOL_TIMEOUT}s)"}
 
 
-def _safe_value(v):
-    if hasattr(v, "isoformat"):
-        return v.isoformat()
-    if hasattr(v, "item"):
-        return v.item()
-    return v

@@ -1,5 +1,32 @@
 # Changes
 
+## 2026-02-17 — Code review: bug fixes and simplification
+
+**What:** Fixed critical conversation routing bug, removed broken/dead code, consolidated duplicated code.
+
+**Files:**
+- `agent.py` — modified: added `conversation_id` parameter so web UI targets the correct conversation
+- `api_chat.py` — modified: passes `conversation_id` through to `run_agent` instead of relying on "most recent" heuristic
+- `db.py` — modified: made `init_db()` idempotent (skip if already initialized)
+- `config.py` — modified: added `ADMIN_USERNAME` (moved from duplicated hardcoded values)
+- `api_auth.py` — modified: import `ADMIN_USERNAME` from config, combined login into single pool acquire
+- `api_admin.py` — modified: import `ADMIN_USERNAME` from config
+- `tools/output.py` — modified: fixed `generate_references_image` KeyError (refs no longer have 'name' field)
+- `tools/utils.py` — created: shared `safe_value()` function
+- `tools/cn_market.py` — modified: use shared `safe_value`, removed duplicate definition
+- `tools/cn_funds.py` — modified: use shared `safe_value`, removed duplicate definition
+- `tools/market_scan.py` — modified: merged `_get_top_gainers`/`_get_top_losers` into single `_get_top_movers`
+- `tools/sina_reports.py` — modified: removed dead code (line that was immediately overwritten)
+- `start.py` — modified: removed unused `sys` import
+- `cli.py` — deleted: was completely broken (wrong `run_agent` signature)
+
+**Details:**
+- Critical bug: web UI messages went to wrong conversation because `run_agent` always used "most recent" instead of the selected one
+- `generate_references_image` would crash on Telegram with KeyError on `r['name']` since refs were simplified to URL-only
+- `_safe_value` was duplicated across cn_market.py and cn_funds.py — moved to tools/utils.py
+- `ADMIN_USERNAME` was hardcoded in two files — moved to config.py as env var
+- `init_db()` was called twice when using start.py (once directly, once via web lifespan)
+
 ## 2026-02-17 — Professional PDF generation with Chinese font support
 
 **What:** Rewrote PDF generation to render Chinese text correctly on Linux servers and produce professionally formatted reports.

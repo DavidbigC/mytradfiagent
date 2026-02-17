@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS web_accounts (
 
 async def init_db():
     global pool
+    if pool is not None:
+        return  # already initialized
     logger.info("Connecting to database...")
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     async with pool.acquire() as conn:

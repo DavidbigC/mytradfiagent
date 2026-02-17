@@ -187,8 +187,6 @@ def _extract_pdf_link(html: str) -> str | None:
 
 async def fetch_company_report(stock_code: str, report_type: str) -> dict:
     """Fetch the latest financial report for a Chinese A-share company."""
-    code = stock_code.strip().lstrip("0") if len(stock_code.strip()) > 6 else stock_code.strip()
-    # Ensure 6-digit code
     code = stock_code.strip()
     if len(code) != 6 or not code.isdigit():
         return {"error": f"Invalid stock code: {code}. Must be 6 digits like '002028'."}

@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import akshare as ak
 from tools.cache import cached
+from tools.utils import safe_value
 
 TOOL_TIMEOUT = 30
 
@@ -153,7 +154,7 @@ def _fetch_cn_stock_data_sync(symbol: str, info_type: str, period: str = "daily"
             if df.empty:
                 return {"error": f"Stock {symbol} not found"}
             info = dict(zip(df["item"], df["value"]))
-            return {str(k): _safe_value(v) for k, v in info.items()}
+            return {str(k): safe_value(v) for k, v in info.items()}
         except Exception as e:
             return {"error": f"Failed to fetch quote: {e}"}
 
@@ -166,7 +167,7 @@ def _fetch_cn_stock_data_sync(symbol: str, info_type: str, period: str = "daily"
             records = df.to_dict(orient="records")
             for r in records:
                 for k, v in r.items():
-                    r[k] = _safe_value(v)
+                    r[k] = safe_value(v)
             return {"symbol": symbol, "period": period, "data": records}
         except Exception as e:
             return {"error": f"Failed to fetch history: {e}"}
@@ -184,7 +185,7 @@ def _fetch_cn_bond_data_sync(bond_type: str) -> dict:
             records = df.to_dict(orient="records")
             for r in records:
                 for k, v in r.items():
-                    r[k] = _safe_value(v)
+                    r[k] = safe_value(v)
             return {"type": "china_treasury_yields", "data": records}
         except Exception as e:
             return {"error": f"Failed to fetch treasury yields: {e}"}
@@ -197,7 +198,7 @@ def _fetch_cn_bond_data_sync(bond_type: str) -> dict:
             records = df.to_dict(orient="records")
             for r in records:
                 for k, v in r.items():
-                    r[k] = _safe_value(v)
+                    r[k] = safe_value(v)
             return {"type": "corporate_bonds", "data": records}
         except Exception as e:
             return {"error": f"Failed to fetch corporate bond data: {e}"}
@@ -267,9 +268,3 @@ async def fetch_cn_bond_data(bond_type: str) -> dict:
         return {"error": f"Timeout fetching bond data (>{TOOL_TIMEOUT}s)"}
 
 
-def _safe_value(v):
-    if hasattr(v, "isoformat"):
-        return v.isoformat()
-    if hasattr(v, "item"):
-        return v.item()
-    return v

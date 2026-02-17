@@ -473,11 +473,10 @@ def generate_references_image(refs: list[dict]) -> str | None:
 
     # Build text lines with wrapping
     lines = []
-    max_chars = 90  # wrap URLs/names at this width
+    max_chars = 90  # wrap URLs at this width
     for r in refs:
-        label = f"[{r['num']}] {r['name']}"
+        label = f"[{r['num']}]"
         url = r["url"]
-        # Wrap long URLs
         wrapped_url = textwrap.fill(url, width=max_chars, subsequent_indent="     ")
         lines.append((label, wrapped_url))
 
