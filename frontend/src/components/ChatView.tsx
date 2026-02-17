@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../store";
 import { sendMessage, fetchMessages } from "../api";
 import MessageBubble from "./MessageBubble";
@@ -54,7 +54,16 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Auto-resize textarea to fit content
+  const autoResize = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+  }, []);
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -91,6 +100,8 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
     if (!msg || !token || sending) return;
 
     setInput("");
+    // Reset textarea height after clearing
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setSending(true);
     setStatus("Connecting...");
 
@@ -129,6 +140,9 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // Ignore Enter during IME composition (Chinese/Japanese/Korean input)
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -159,10 +173,11 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
 
       <div className="input-area">
         <textarea
+          ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => { setInput(e.target.value); autoResize(); }}
           onKeyDown={handleKeyDown}
-          placeholder="Ask a question..."
+          placeholder="Ask a question... (Shift+Enter for new line)"
           rows={1}
           disabled={sending}
         />

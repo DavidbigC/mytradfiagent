@@ -907,11 +907,13 @@ html, body, #root {
   color: var(--text-primary);
   font-size: 0.95rem;
   font-family: inherit;
+  line-height: 1.5;
   resize: none;
   outline: none;
   min-height: 42px;
-  max-height: 120px;
-  transition: border-color 0.2s;
+  max-height: 200px;
+  overflow-y: auto;
+  transition: border-color 0.2s, height 0.1s ease;
 }
 
 .input-area textarea:focus {
