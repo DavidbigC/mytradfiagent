@@ -1,3 +1,4 @@
+import asyncio
 import time
 import hashlib
 import json
@@ -6,6 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _cache: dict[str, dict] = {}
+_cache_lock = asyncio.Lock()
 
 DEFAULT_TTL = 300  # 5 minutes
 MAX_CACHE_SIZE = 200  # evict oldest entries when exceeded
@@ -13,7 +15,6 @@ MAX_CACHE_SIZE = 200  # evict oldest entries when exceeded
 
 def cache_key(func_name: str, args) -> str:
     """Generate cache key from function name and args (supports dict, list, and primitives)."""
-    # Normalize args: convert lists to sorted tuples for consistent hashing
     if isinstance(args, dict):
         raw = f"{func_name}:{json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)}"
     else:
@@ -22,7 +23,7 @@ def cache_key(func_name: str, args) -> str:
 
 
 def _evict_expired():
-    """Remove expired entries and oldest if over size limit."""
+    """Remove expired entries and oldest if over size limit. Must be called under _cache_lock."""
     now = time.time()
     expired = [k for k, v in _cache.items() if now - v["ts"] >= v["ttl"]]
     for k in expired:
@@ -41,15 +42,15 @@ def get_cached(func_name: str, args) -> dict | None:
     if entry and time.time() - entry["ts"] < entry["ttl"]:
         logger.info(f"Cache HIT: {func_name}")
         return entry["result"]
-    if entry:
-        del _cache[key]  # expired — remove it
+    # Don't mutate here without lock — just return None and let set_cached handle cleanup
     return None
 
 
-def set_cached(func_name: str, args, result, ttl: int = DEFAULT_TTL):
-    _evict_expired()
-    key = cache_key(func_name, args)
-    _cache[key] = {"result": result, "ts": time.time(), "ttl": ttl}
+async def set_cached(func_name: str, args, result, ttl: int = DEFAULT_TTL):
+    async with _cache_lock:
+        _evict_expired()
+        key = cache_key(func_name, args)
+        _cache[key] = {"result": result, "ts": time.time(), "ttl": ttl}
 
 
 def cached(ttl: int = DEFAULT_TTL):
@@ -62,7 +63,7 @@ def cached(ttl: int = DEFAULT_TTL):
             result = await func(**kwargs)
             # Don't cache errors
             if not (isinstance(result, dict) and "error" in result):
-                set_cached(func.__name__, kwargs, result, ttl)
+                await set_cached(func.__name__, kwargs, result, ttl)
             return result
         wrapper.__name__ = func.__name__
         wrapper.__doc__ = func.__doc__

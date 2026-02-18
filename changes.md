@@ -496,3 +496,20 @@
 - Default language is Chinese (`zh`), persisted in `localStorage` under key `lang`
 - Toggle button in sidebar footer shows "EN" when in Chinese mode, "中" when in English mode
 - All user-facing strings translated: login, sidebar, chat, debate modal, thinking blocks, references, admin panel
+
+## 2026-02-18 — Fix conversation isolation + add conversation summarization
+
+**What:** Fixed multiple state management bugs causing conversations to interfere under concurrent load. Added automatic conversation summarization for long conversations.
+
+**Files:**
+- `tools/cache.py` — modified: added `asyncio.Lock` to protect global `_cache` dict mutations; `set_cached` is now async; `get_cached` no longer mutates dict without lock
+- `accounts.py` — modified: `_user_locks` now stores `(lock, last_used_time)` tuples with TTL-based cleanup (1hr); added `get_conversation_summary()`, `save_conversation_summary()`, `load_messages_for_summarization()` for summarization support
+- `tools/sources.py` — modified: added `fcntl` file locking (`LOCK_SH` for reads, `LOCK_EX` for writes) to prevent concurrent write corruption on `sources.json`
+- `db.py` — modified: added `summary` (TEXT) and `summary_up_to` (INTEGER) columns to conversations table for persisting conversation summaries
+- `agent.py` — modified: added `_maybe_summarize()` function and `_SUMMARIZE_PROMPT`; wired summarization into `_run_agent_inner` after loading messages and before prepending system prompt; imports new accounts functions
+
+**Details:**
+- **Cache fix**: The global `_cache` dict was shared across all concurrent requests. Dict mutations during `_evict_expired()` and `set_cached()` could corrupt under concurrent access. Now protected by `asyncio.Lock`. Cache keys remain user-agnostic (market data is the same for all users) — this is intentional.
+- **User locks fix**: `_user_locks` dict grew unbounded. Now each entry tracks last-used time, and stale locks (unused >1hr, not currently held) are cleaned up every 5 minutes.
+- **Sources fix**: `_load_sources`/`_save_sources` had a classic read-modify-write race condition. Two concurrent `save_data_source` calls could lose one write. Now uses `fcntl.flock` for exclusive write locking and shared read locking.
+- **Conversation summarization**: When a conversation exceeds 30 user+assistant messages, older messages are summarized into a single dense paragraph via an LLM call. The summary is persisted in the `conversations.summary` column and prepended to the message list on future requests. Recent 10 messages are always kept unsummarized. Full history remains in the `messages` table untouched. Follows the same pattern as LangGraph checkpointers and OpenAI's conversation state API.

@@ -2,20 +2,45 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from uuid import UUID
 
 from db import get_pool
 
 logger = logging.getLogger(__name__)
 
-# Per-user asyncio locks to prevent concurrent agent runs
-_user_locks: dict[UUID, asyncio.Lock] = {}
+# Per-user asyncio locks to prevent concurrent agent runs.
+# Each entry stores (lock, last_used_timestamp) for TTL-based cleanup.
+_user_locks: dict[UUID, tuple[asyncio.Lock, float]] = {}
+_LOCK_TTL = 3600  # Clean up locks unused for 1 hour
+_LOCK_CLEANUP_INTERVAL = 300  # Run cleanup at most every 5 minutes
+_last_lock_cleanup = 0.0
+
+
+def _cleanup_stale_locks():
+    """Remove locks that haven't been used in _LOCK_TTL seconds."""
+    global _last_lock_cleanup
+    now = time.time()
+    if now - _last_lock_cleanup < _LOCK_CLEANUP_INTERVAL:
+        return
+    _last_lock_cleanup = now
+    stale = [uid for uid, (lock, ts) in _user_locks.items()
+             if now - ts > _LOCK_TTL and not lock.locked()]
+    for uid in stale:
+        del _user_locks[uid]
+    if stale:
+        logger.debug(f"Cleaned up {len(stale)} stale user locks")
 
 
 def get_user_lock(user_id: UUID) -> asyncio.Lock:
-    if user_id not in _user_locks:
-        _user_locks[user_id] = asyncio.Lock()
-    return _user_locks[user_id]
+    _cleanup_stale_locks()
+    entry = _user_locks.get(user_id)
+    if entry:
+        _user_locks[user_id] = (entry[0], time.time())
+        return entry[0]
+    lock = asyncio.Lock()
+    _user_locks[user_id] = (lock, time.time())
+    return lock
 
 
 async def get_or_create_user(platform: str, platform_uid: str) -> UUID:
@@ -128,3 +153,43 @@ async def load_recent_messages(conversation_id: UUID, limit: int = 20) -> list[d
         messages.pop(0)
 
     return messages
+
+
+async def get_conversation_summary(conversation_id: UUID) -> str | None:
+    """Get the stored conversation summary, if any."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT summary, summary_up_to FROM conversations WHERE id = $1",
+            conversation_id,
+        )
+    if row and row["summary"]:
+        return row["summary"]
+    return None
+
+
+async def save_conversation_summary(conversation_id: UUID, summary: str, up_to_message_id: int):
+    """Persist a conversation summary, marking which message ID it covers."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE conversations SET summary = $1, summary_up_to = $2 WHERE id = $3",
+            summary, up_to_message_id, conversation_id,
+        )
+
+
+async def load_messages_for_summarization(conversation_id: UUID) -> list[dict]:
+    """Load ALL messages (user + assistant only) for generating a summary.
+    Returns dicts with 'id', 'role', 'content'."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, role, content
+               FROM messages
+               WHERE conversation_id = $1
+                 AND role IN ('user', 'assistant')
+                 AND content IS NOT NULL AND content != ''
+               ORDER BY id ASC""",
+            conversation_id,
+        )
+    return [{"id": row["id"], "role": row["role"], "content": row["content"]} for row in rows]

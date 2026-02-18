@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 import logging
@@ -83,7 +84,11 @@ SAVE_DATA_SOURCE_SCHEMA = {
 def _load_sources() -> dict:
     try:
         with open(SOURCES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            try:
+                return json.load(f)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except (FileNotFoundError, json.JSONDecodeError):
         return {"sources": []}
 
@@ -91,7 +96,11 @@ def _load_sources() -> dict:
 def _save_sources(data: dict):
     os.makedirs(os.path.dirname(SOURCES_FILE), exist_ok=True)
     with open(SOURCES_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 # Map common Chinese/English synonyms to canonical data types

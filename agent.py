@@ -13,6 +13,8 @@ from tools import TOOL_SCHEMAS, execute_tool
 from accounts import (
     get_active_conversation, get_user_lock,
     load_recent_messages, save_message,
+    get_conversation_summary, save_conversation_summary,
+    load_messages_for_summarization,
 )
 
 # ContextVar so tools (e.g. trade_analyzer) can emit status updates
@@ -34,6 +36,85 @@ logger = logging.getLogger(__name__)
 client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
 
 MAX_TURNS = 30
+
+# Summarization settings
+SUMMARIZE_THRESHOLD = 30  # Trigger summarization when message count exceeds this
+SUMMARIZE_KEEP_RECENT = 10  # Keep this many recent messages unsummarized
+
+_SUMMARIZE_PROMPT = """Summarize the following conversation between a user and a financial research assistant.
+Preserve ALL key facts: stock codes, numbers, dates, conclusions, tool results, and decisions made.
+Write a dense, factual summary in the same language the conversation used.
+Do NOT add commentary — just compress the information.
+Max 800 words.
+
+Conversation:
+{conversation}"""
+
+
+async def _maybe_summarize(conv_id: UUID, messages: list[dict]) -> list[dict]:
+    """If the conversation is long, summarize older messages and prepend the summary.
+
+    Returns the (potentially shortened) message list to send to the LLM.
+    The full history stays in the DB untouched.
+    """
+    # Only user + assistant messages count toward the threshold
+    substantive = [m for m in messages if m["role"] in ("user", "assistant")]
+    if len(substantive) < SUMMARIZE_THRESHOLD:
+        # Check if there's an existing summary to prepend
+        existing = await get_conversation_summary(conv_id)
+        if existing:
+            summary_msg = {"role": "user", "content": f"[Previous conversation summary]\n{existing}"}
+            return [summary_msg] + messages
+        return messages
+
+    # Load all user/assistant messages for summarization
+    all_msgs = await load_messages_for_summarization(conv_id)
+    if len(all_msgs) < SUMMARIZE_THRESHOLD:
+        return messages
+
+    # Summarize everything except the most recent SUMMARIZE_KEEP_RECENT messages
+    cutoff_idx = len(all_msgs) - SUMMARIZE_KEEP_RECENT
+    to_summarize = all_msgs[:cutoff_idx]
+    cutoff_message_id = to_summarize[-1]["id"]
+
+    # Build conversation text for summarization
+    conv_text_parts = []
+    existing_summary = await get_conversation_summary(conv_id)
+    if existing_summary:
+        conv_text_parts.append(f"[Prior summary]: {existing_summary}\n")
+
+    for m in to_summarize:
+        content = m["content"][:2000]  # Cap individual messages
+        conv_text_parts.append(f"[{m['role']}]: {content}")
+    conv_text = "\n".join(conv_text_parts)
+    if len(conv_text) > 15000:
+        conv_text = conv_text[:15000] + "\n...[truncated]"
+
+    try:
+        response = await client.chat.completions.create(
+            model=MINIMAX_MODEL,
+            messages=[{"role": "user", "content": _SUMMARIZE_PROMPT.format(conversation=conv_text)}],
+            max_tokens=1500,
+        )
+        summary = response.choices[0].message.content or ""
+        # Strip any <think> tags from the summary
+        summary = re.sub(r"<think>.*?</think>\s*", "", summary, flags=re.DOTALL).strip()
+    except Exception as e:
+        logger.error(f"Summarization failed: {e}")
+        # Fall back to existing summary or no summary
+        existing = await get_conversation_summary(conv_id)
+        if existing:
+            summary_msg = {"role": "user", "content": f"[Previous conversation summary]\n{existing}"}
+            return [summary_msg] + messages
+        return messages
+
+    # Persist the summary
+    await save_conversation_summary(conv_id, summary, cutoff_message_id)
+    logger.info(f"Summarized conversation {conv_id}: {len(to_summarize)} messages → {len(summary)} chars")
+
+    # Return: summary prefix + only the recent messages from our loaded set
+    summary_msg = {"role": "user", "content": f"[Previous conversation summary]\n{summary}"}
+    return [summary_msg] + messages
 
 
 def _truncate_result(result: dict | list | str) -> str:
@@ -101,12 +182,15 @@ async def _run_agent_inner(
     # Load recent history from DB
     messages = await load_recent_messages(conv_id)
 
-    # Always prepend fresh system prompt (not stored in DB)
-    messages.insert(0, {"role": "system", "content": get_system_prompt()})
-
     # Add user message and persist it
     messages.append({"role": "user", "content": user_message})
     await save_message(conv_id, "user", user_message)
+
+    # Summarize older messages if conversation is long
+    messages = await _maybe_summarize(conv_id, messages)
+
+    # Always prepend fresh system prompt (not stored in DB)
+    messages.insert(0, {"role": "system", "content": get_system_prompt()})
 
     async def _emit(text: str):
         if on_status:

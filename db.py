@@ -45,6 +45,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_platform_accounts_lookup ON platform_accounts(platform, platform_uid);
 
+-- Column for storing summarized conversation history (added 2026-02-18)
+ALTER TABLE IF EXISTS conversations ADD COLUMN IF NOT EXISTS summary TEXT;
+ALTER TABLE IF EXISTS conversations ADD COLUMN IF NOT EXISTS summary_up_to INTEGER DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS web_accounts (
     id              SERIAL PRIMARY KEY,
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
