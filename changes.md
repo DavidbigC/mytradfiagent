@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-02-18 — Match debate report language to user input
+
+**What:** Fixed debate analyst outputs appearing in English when user asks in Chinese. Added dynamic `response_language` field to hypothesis and used it across all prompts to enforce consistent output language matching the user's input.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: added `response_language` to hypothesis schema; replaced ambiguous "write in the same language as the data" with explicit `{response_language}` in all 5 prompts (`_PRO_OPENING`, `_CON_OPENING`, `_REBUTTAL`, `_JUDGE`, `_SUMMARY`); translated dimension templates to Chinese
+
+**Details:**
+- Root cause: dimension headings were in English (e.g. "VALUATION", "EARNINGS TRAJECTORY"), and the language instruction was ambiguous, so some LLM analysts defaulted to English
+- Fix: hypothesis formation now detects user language → `response_language` field (e.g. "中文", "English") → all prompts enforce output in that language
+- Dimension templates (`_DIMENSIONS_SINGLE_STOCK`, `_DIMENSIONS_COMPARISON`, `_DIMENSIONS_SECTOR`, `_DIMENSIONS_GENERAL`) translated to Chinese
+
 ## 2026-02-18 — Separate debate mode from regular chat
 
 **What:** Moved debate functionality out of the chat input area into a dedicated sidebar button with a modal dialog. Debate now creates a new conversation automatically.

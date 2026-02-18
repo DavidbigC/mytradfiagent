@@ -100,7 +100,7 @@ Rules:
 - No adjectives like "强劲", "优秀", "令人印象深刻". State the number and let it speak.
 - Where data is unfavorable to the hypothesis, state it factually. Do not minimize or explain away.
 - End with: KEY EVIDENCE SUMMARY (the 3 strongest data points supporting H₀) and CONVICTION LEVEL (1-10).
-- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
+- 600-800 words. **You MUST write your entire response in {response_language}**, including all headings, analysis, and conclusions. Maintain a neutral, clinical tone throughout.
 """ + _UNIT_RULE + """
 
 === DATA ===
@@ -118,53 +118,53 @@ Rules:
 - No adjectives like "令人担忧", "严重", "危险". State the number and let it speak.
 - Where data actually supports the hypothesis, state it factually. Do not dismiss or undermine.
 - End with: KEY COUNTER-EVIDENCE (the 3 strongest data points against H₀) and CONVICTION LEVEL (1-10).
-- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
+- 600-800 words. **You MUST write your entire response in {response_language}**, including all headings, analysis, and conclusions. Maintain a neutral, clinical tone throughout.
 """ + _UNIT_RULE + """
 
 === DATA ===
 {data_pack}"""
 
-_DIMENSIONS_SINGLE_STOCK = """Analyze each dimension below. For each, state the relevant numbers, compute ratios or trends where applicable.
+_DIMENSIONS_SINGLE_STOCK = """逐一分析以下维度，每个维度需给出具体数据，计算相关比率或趋势。
 
-1. VALUATION: Current PE/PB vs 5-year historical range and sector median. Percentile rank.
-2. EARNINGS TRAJECTORY: Revenue and net profit QoQ/YoY growth rates. Is growth accelerating, stable, or decelerating? Cite exact figures.
-3. BALANCE SHEET: Debt-to-asset ratio trend, current ratio, cash position. Flag any deterioration.
-4. CASH FLOW: OCF/net income ratio (earnings quality). Free cash flow trend over last 4 quarters.
-5. CAPITAL FLOW: Net institutional flow direction and magnitude from the data. Quantify.
-6. SHAREHOLDER CHANGES: Top holder position changes — 增持/减持/新进. Net direction.
-7. DIVIDEND: Trailing yield, payout ratio, consistency over last 3+ years.
-8. FORWARD OUTLOOK: Based strictly on data trends (not speculation), what measurable changes could continue?"""
+1. 估值分析: 当前PE/PB与近5年历史区间和行业中位数对比，百分位排名。
+2. 盈利趋势: 营收和净利润的环比/同比增速，增长是在加速、稳定还是减速？引用具体数字。
+3. 资产负债: 资产负债率趋势、流动比率、现金头寸，标记任何恶化迹象。
+4. 现金流: 经营现金流/净利润比率（盈利质量），近4个季度自由现金流趋势。
+5. 资金流向: 机构净流入/流出方向及规模，量化描述。
+6. 股东变动: 前十大股东持仓变化——增持/减持/新进，净方向判断。
+7. 分红: 近12个月股息率、派息率、近3年以上的分红连续性。
+8. 前瞻展望: 严格基于数据趋势（非推测），哪些可量化的变化可能延续？"""
 
-_DIMENSIONS_COMPARISON = """Compare the two entities across each dimension below. For each, cite specific numbers from both sides.
+_DIMENSIONS_COMPARISON = """逐维度比较两个标的，每个维度需引用双方的具体数据。
 
-1. VALUATION: PE/PB for each entity. Which trades at a discount/premium and by how much?
-2. EARNINGS: Revenue and profit growth rates for each. Which has better trajectory?
-3. BALANCE SHEET: Debt-to-asset and leverage for each. Which has stronger financial position?
-4. CASH FLOW: OCF/net income ratio for each. Which has better earnings quality?
-5. CAPITAL FLOW: Institutional flow comparison. Which is seeing more net inflow?
-6. SHAREHOLDER CHANGES: Top holder activity for each. Net direction comparison.
-7. DIVIDEND: Yield and sustainability for each. Which offers better shareholder returns?
-8. RELATIVE MERIT: Based strictly on data, what measurable advantages does each have?"""
+1. 估值对比: 各自的PE/PB，哪个折价/溢价？差距多大？
+2. 盈利对比: 各自的营收和利润增速，哪个趋势更好？
+3. 资产负债对比: 各自的资产负债率和杠杆水平，哪个财务状况更稳健？
+4. 现金流对比: 各自的经营现金流/净利润比率，哪个盈利质量更高？
+5. 资金流向对比: 机构资金流入对比，哪个获得更多净流入？
+6. 股东变动对比: 各自前十大股东持仓变化，净方向对比。
+7. 分红对比: 各自股息率和可持续性，哪个股东回报更好？
+8. 综合优劣: 严格基于数据，各自有哪些可量化的优势？"""
 
-_DIMENSIONS_SECTOR = """Analyze the sector/market across these dimensions:
+_DIMENSIONS_SECTOR = """分析该板块/市场的以下维度:
 
-1. VALUATION: Sector average PE/PB vs historical range. Where are we in the cycle?
-2. EARNINGS TREND: Aggregate sector revenue/profit growth. Accelerating or decelerating?
-3. CAPITAL FLOW: Institutional and northbound flow into/out of the sector. Quantify.
-4. MARKET STRUCTURE: Which stocks lead the sector? Concentration of gains/losses.
-5. CATALYSTS: Data-backed factors that could drive the sector. Policy, rates, macro indicators.
-6. RISK FACTORS: Measurable headwinds from the data.
+1. 估值水平: 板块平均PE/PB与历史区间对比，当前处于周期什么位置？
+2. 盈利趋势: 板块整体营收/利润增速，是在加速还是减速？
+3. 资金流向: 机构和北向资金的板块流入/流出情况，量化描述。
+4. 市场结构: 哪些个股领涨/领跌？涨跌集中度如何？
+5. 催化因素: 有数据支撑的板块驱动因素——政策、利率、宏观指标。
+6. 风险因素: 数据可量化的逆风因素。
 
 """
 
-_DIMENSIONS_GENERAL = """Analyze the question across these dimensions:
+_DIMENSIONS_GENERAL = """从以下维度分析该问题:
 
-1. VALUATION: Relevant market/sector valuations vs historical range.
-2. MACRO INDICATORS: Interest rates, capital flows, relevant economic data.
-3. MARKET SENTIMENT: Institutional positioning and flow data. Quantify.
-4. HISTORICAL PATTERNS: Similar data patterns from the past and outcomes.
-5. RISK FACTORS: Measurable risks from the data.
-6. OPPORTUNITY SIGNALS: Data points that support the thesis."""
+1. 估值水平: 相关市场/板块估值与历史区间对比。
+2. 宏观指标: 利率、资金流向、相关经济数据。
+3. 市场情绪: 机构持仓和资金流向数据，量化描述。
+4. 历史规律: 过去类似数据模式及其结果。
+5. 风险因素: 数据可量化的风险。
+6. 机会信号: 支持该论点的数据点。"""
 
 
 def _get_dimensions_text(question_type: str) -> str:
@@ -198,7 +198,7 @@ Rules:
 - Do not use combative language ("他们忽略了", "这是错误的"). Instead: "该数据点需补充背景: [具体数据]".
 - If the opposing side made a valid point with correct data, acknowledge it explicitly.
 - Every counter-point must include a specific number.
-- 300-500 words. Write in the same language as the debate content. Maintain a neutral, clinical tone.
+- 300-500 words. **You MUST write your entire response in {response_language}**. Maintain a neutral, clinical tone.
 """ + _UNIT_RULE + """
 
 === ORIGINAL DATA FOR REFERENCE ===
@@ -218,7 +218,7 @@ Evaluation criteria (in order of importance):
 
 Disregard: emotional language, rhetorical flourish, unsubstantiated predictions, appeals to market sentiment.
 
-You MUST produce a response in EXACTLY this structure (in the same language as the analyst arguments):
+You MUST produce a response in EXACTLY this structure (**write entirely in {response_language}**):
 
 **判定: {verdict_option_1} / {verdict_option_2} / {verdict_option_3}**
 (Choose the third option only if both sides have equal data support — not as a safe default)
@@ -509,6 +509,7 @@ RULES:
 - verdict_options must have exactly 3 options.
 - report_title should be descriptive and in the same language as the question.
 - Match the language of the user's question for hypothesis, framings, and title.
+- Include a "response_language" field: the language the user wrote in (e.g. "中文", "English", "日本語").
 
 USER QUESTION: __QUESTION__
 """
@@ -792,13 +793,14 @@ async def _run_opening_round(hypothesis: dict, data_pack: str, status_fn=None, t
     """Run 4 parallel opening arguments: 2 pro-H₀ (MiniMax+Qwen), 2 con-H₀ (MiniMax+Qwen)."""
     h = hypothesis.get("hypothesis", "")
     question_type = hypothesis.get("question_type", "general")
+    lang = hypothesis.get("response_language", "中文")
     dimensions_text = _get_dimensions_text(question_type)
 
     pro_prompt = _PRO_OPENING.format(
-        hypothesis=h, dimensions_text=dimensions_text, data_pack=data_pack,
+        hypothesis=h, dimensions_text=dimensions_text, data_pack=data_pack, response_language=lang,
     )
     con_prompt = _CON_OPENING.format(
-        hypothesis=h, dimensions_text=dimensions_text, data_pack=data_pack,
+        hypothesis=h, dimensions_text=dimensions_text, data_pack=data_pack, response_language=lang,
     )
     system = "你是一位量化金融分析师。仅基于数据进行分析。禁止使用主观形容词。每个论点必须附带具体数字。注意单位换算：1 billion = 10亿，数据中的万元需÷10000得到亿元。"
 
@@ -835,31 +837,32 @@ async def _run_rebuttal_round(
 ) -> dict:
     """Each debater rebuts the opposing side, sees ally's argument."""
     h = hypothesis.get("hypothesis", "")
+    lang = hypothesis.get("response_language", "中文")
     system = "你是一位量化金融分析师。请核查对方数据的准确性和完整性。仅用数据回应，禁止情绪化措辞。注意单位换算：1 billion = 10亿。"
 
     # Pro-A rebuts cons, sees Pro-B as ally
     pro_a_rebuttal = _REBUTTAL.format(
         side="supporting (支持H₀)", hypothesis=h,
         opposing_args=f"--- 反方分析师1 ---\n{openings['con_a']}\n\n--- 反方分析师2 ---\n{openings['con_b']}",
-        ally_arg=openings["pro_b"], data_pack=data_pack,
+        ally_arg=openings["pro_b"], data_pack=data_pack, response_language=lang,
     )
     # Pro-B rebuts cons, sees Pro-A as ally
     pro_b_rebuttal = _REBUTTAL.format(
         side="supporting (支持H₀)", hypothesis=h,
         opposing_args=f"--- 反方分析师1 ---\n{openings['con_a']}\n\n--- 反方分析师2 ---\n{openings['con_b']}",
-        ally_arg=openings["pro_a"], data_pack=data_pack,
+        ally_arg=openings["pro_a"], data_pack=data_pack, response_language=lang,
     )
     # Con-A rebuts pros, sees Con-B as ally
     con_a_rebuttal = _REBUTTAL.format(
         side="rejecting (反对H₀)", hypothesis=h,
         opposing_args=f"--- 正方分析师1 ---\n{openings['pro_a']}\n\n--- 正方分析师2 ---\n{openings['pro_b']}",
-        ally_arg=openings["con_b"], data_pack=data_pack,
+        ally_arg=openings["con_b"], data_pack=data_pack, response_language=lang,
     )
     # Con-B rebuts pros, sees Con-A as ally
     con_b_rebuttal = _REBUTTAL.format(
         side="rejecting (反对H₀)", hypothesis=h,
         opposing_args=f"--- 正方分析师1 ---\n{openings['pro_a']}\n\n--- 正方分析师2 ---\n{openings['pro_b']}",
-        ally_arg=openings["con_a"], data_pack=data_pack,
+        ally_arg=openings["con_a"], data_pack=data_pack, response_language=lang,
     )
 
     r_pro_a, r_pro_b, r_con_a, r_con_b = await asyncio.gather(
@@ -895,6 +898,7 @@ async def _run_judge(
 ) -> str:
     """Shuffle all 8 arguments anonymously and have MiniMax judge."""
     h = hypothesis.get("hypothesis", "")
+    lang = hypothesis.get("response_language", "中文")
     verdict_options = hypothesis.get("verdict_options", ["支持H₀", "反对H₀", "证据不足"])
 
     # Build labeled arguments with random order
@@ -926,6 +930,7 @@ async def _run_judge(
         verdict_option_3=verdict_options[2] if len(verdict_options) > 2 else "证据不足",
         data_summary=data_summary,
         all_arguments=all_arguments,
+        response_language=lang,
     )
 
     system = (
@@ -950,7 +955,7 @@ _SUMMARY = """You are a senior research editor. Below is the complete output of 
 
 Your task: produce an institutional-quality executive summary that a portfolio manager can read in 2 minutes.
 
-Structure EXACTLY as follows (in the same language as the debate content):
+Structure EXACTLY as follows (**write entirely in {response_language}**):
 
 ## 执行摘要
 
@@ -987,7 +992,7 @@ Rules:
 - No adjectives like "强劲", "令人担忧", "优秀". Numbers only.
 - Do not repeat the judge verdict verbatim — synthesize and restructure.
 - 800-1200 words total.
-- Write in the same language as the debate content and data provided.
+- **You MUST write your entire response in {response_language}**, including all headings and analysis.
 """ + _UNIT_RULE + """
 
 === JUDGE VERDICT ===
@@ -1038,6 +1043,7 @@ async def _run_summary(
         rebuttal_pro_a=rebuttals["pro_a"], rebuttal_pro_b=rebuttals["pro_b"],
         rebuttal_con_a=rebuttals["con_a"], rebuttal_con_b=rebuttals["con_b"],
         data_summary=data_summary,
+        response_language=hypothesis.get("response_language", "中文"),
     )
 
     system = (
