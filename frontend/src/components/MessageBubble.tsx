@@ -1,10 +1,17 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ReferenceCard from "./ReferenceCard";
+import ThinkingBlock from "./ThinkingBlock";
 
 interface Ref {
   num: string;
   url: string;
+}
+
+export interface ThinkingData {
+  source: string;
+  label: string;
+  content: string;
 }
 
 interface Props {
@@ -12,13 +19,21 @@ interface Props {
   content: string;
   files?: string[];
   references?: Ref[];
+  thinking?: ThinkingData[];
 }
 
-export default function MessageBubble({ role, content, files, references }: Props) {
+export default function MessageBubble({ role, content, files, references, thinking }: Props) {
   if (role === "tool") return null;
 
   return (
     <div className={`message ${role}`}>
+      {thinking && thinking.length > 0 && (
+        <div className="thinking-blocks">
+          {thinking.map((t, i) => (
+            <ThinkingBlock key={i} label={t.label} content={t.content} />
+          ))}
+        </div>
+      )}
       <div className="message-content">
         {role === "assistant" ? (
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>

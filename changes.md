@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-02-17 — Archive Telegram bot, web-only startup
+
+**What:** Moved Telegram bot component to `archive/` since the web app is the primary interface. Simplified `start.py` to web-only.
+
+**Files:**
+- `bot.py` → `archive/bot.py` — moved
+- `start.py` — modified: removed all Telegram bot logic, removed `TELEGRAM_BOT_TOKEN` import
+- `config.py` — modified: removed `TELEGRAM_BOT_TOKEN` env var
+
+**Details:**
+- `start.py` now only runs the uvicorn web server (no more dual web+bot mode)
+- Bot code preserved in `archive/` for reference if needed later
+
 ## 2026-02-17 — EastMoney structured data tools (financials, shareholders, dragon tiger, dividends)
 
 **What:** Added 4 new tools using EastMoney datacenter APIs for structured financial data — financial statements, top shareholders, dragon tiger list, and dividend history. Updated system prompt to use structured APIs instead of web scraping for deep stock analysis.
@@ -224,3 +237,135 @@
 - Documentation includes: field counts, sample data, value ratings (HIGH/MEDIUM), Python usage examples, stock code format specifications
 - Missing/unavailable: 15 data types could not be found via API (announcements, stock calendar, margin trading, block trades, executive holdings, research reports, etc.) - may require scraping or authentication
 - Recommended priority: 8 HIGH-value endpoints identified for immediate agent tool integration
+
+## 2026-02-17 — Multi-LLM debate system for trade opportunity analysis
+
+**What:** Added `analyze_trade_opportunity` tool — a structured 4-phase debate system using MiniMax + Qwen to produce buy/sell/hold verdicts with anonymized judging.
+
+**Files:**
+- `tools/trade_analyzer.py` — created: multi-LLM debate orchestrator (~440 lines) with 4 phases: data collection, opening arguments, rebuttals, anonymized judge
+- `tools/__init__.py` — modified: registered `analyze_trade_opportunity` + `ANALYZE_TRADE_SCHEMA` (now 25 tools total)
+- `config.py` — modified: added `QWEN_API_KEY`, `QWEN_BASE_URL`, `QWEN_MODEL` env vars; added tool #22 to priority list; added routing rule for "值得买吗"/"should I buy" triggers; added citation URL mapping
+
+**Details:**
+- Phase 1: Parallel data collection via 7 existing tools (income/balance/cashflow statements, quote, capital flow, shareholders, dividends)
+- Phase 2: 4 parallel LLM calls — Bull-A (MiniMax), Bull-B (Qwen), Bear-A (MiniMax), Bear-B (Qwen) with structured prompts covering 8 mandatory analysis dimensions
+- Phase 3: 4 parallel rebuttal calls — each debater sees opposing arguments + ally's argument, produces targeted counter-arguments
+- Phase 4: 1 MiniMax judge call — all 8 arguments shuffled randomly, labeled Analyst 1-8 (no model attribution), produces verdict with confidence score, rationale, risks, dissenting view, time horizon
+- Circular import avoided via late import of `execute_tool` in `_execute_tool` wrapper
+- Total: ~9 LLM calls + 7 data tool calls per analysis, ~30-60 seconds end-to-end
+
+## 2026-02-17 — Research: TradingAgents multi-agent debate architecture analysis
+
+**What:** Deep analysis of TauricResearch/TradingAgents GitHub repo's multi-agent debate system architecture, covering all agent roles, prompts, debate flow, state management, memory/reflection, and final decision pipeline.
+
+**Files:**
+- `changes.md` — modified (this entry)
+
+**Details:**
+- Fetched and analyzed 16 source files from the TradingAgents repo covering analysts, researchers, trader, risk management debaters, managers, graph orchestration, conditional logic, reflection, propagation, signal processing, and agent state definitions
+- Documented exact prompts for all 10+ agent roles, two-tier debate structure (bull/bear investment debate + 3-way risk debate), state passing via LangGraph TypedDict, memory/reflection learning loop, and signal extraction pipeline
+- Key finding: system uses configurable debate rounds (default 1 round each) with round-robin turn-taking controlled by counter-based conditional edges in a LangGraph StateGraph
+
+## 2026-02-18 — Show agent thinking process with model name in frontend
+
+**What:** Added real-time status updates showing which model is working and what phase the trade analyzer is in, replacing generic "Thinking..." with model-tagged progress.
+
+**Files:**
+- `agent.py` — modified: added `contextvars.ContextVar` for status callback, changed status to "MiniMax · Thinking...", set/reset contextvar around tool execution
+- `tools/trade_analyzer.py` — modified: reads status callback contextvar, emits phase-specific status ("Collecting market data...", "MiniMax + Qwen · Opening arguments...", etc.)
+- `frontend/src/components/StatusIndicator.tsx` — modified: parses " · " separator to render model name as styled badge pill
+- `frontend/src/styles/index.css` — modified: added `.status-model` pill styling (accent-colored badge)
+
+**Details:**
+- Status progression during trade analysis: "Collecting market data..." → "MiniMax + Qwen · Opening arguments (4 analysts)..." → "MiniMax + Qwen · Rebuttals (4 analysts)..." → "MiniMax · Judge rendering verdict..."
+- Uses `contextvars.ContextVar` to pass the status callback to tools without changing the `execute_tool` interface
+- Frontend parsing is backwards-compatible: status text without " · " renders as before
+
+## 2026-02-18 — Tool-augmented debaters + thinking display
+
+**What:** Debaters in the trade analyzer now have access to research tools (web search, financial data) to strengthen arguments with live evidence. All `<think>` blocks from MiniMax are extracted and displayed as collapsible reasoning blocks in the frontend.
+
+**Files:**
+- `agent.py` — modified: added `thinking_callback` contextvar, `on_thinking` param to `run_agent`/`_run_agent_inner`, extract `<think>` content before stripping, set both contextvars around tool execution
+- `tools/trade_analyzer.py` — modified: added `_llm_call_with_tools` mini agent loop (max 3 tool rounds, 90s timeout), `_get_debater_tool_schemas` (excludes output/meta/recursive tools), `_msg_to_dict`, `_truncate_tool_result` (3000 char cap), `_extract_and_strip_thinking`, thinking extraction in `_llm_call` (judge), updated prompts with tool-access instruction, wired `status_fn`/`thinking_fn` through all phases
+- `api_chat.py` — modified: added `on_thinking` callback that queues `{"event": "thinking", ...}` SSE events, passes to `run_agent`
+- `frontend/src/api.ts` — modified: added `onThinking` to `SSECallbacks`, parses `thinking` SSE event type
+- `frontend/src/components/ThinkingBlock.tsx` — created: collapsible block with arrow toggle, italic label, pre-wrapped content area (max 300px scroll), border-left accent
+- `frontend/src/components/ChatView.tsx` — modified: `thinkingBlocks` state + ref for stale closure safety, `onThinking` merges by source, attaches accumulated blocks to assistant message on done, renders in-progress blocks above status
+- `frontend/src/components/MessageBubble.tsx` — modified: accepts `thinking` prop, renders `ThinkingBlock` components above message content
+- `frontend/src/styles/index.css` — modified: added `.thinking-blocks`, `.thinking-block`, `.thinking-toggle`, `.thinking-arrow`, `.thinking-label`, `.thinking-content` styles
+
+**Details:**
+- Debaters use all data-fetching tools (19 tools) except generate_chart, generate_pdf, dispatch_subagents, analyze_trade_opportunity, lookup_data_sources, save_data_source
+- Max 3 tool rounds per debater, then forced text-only on round 4
+- Status shows individual tool calls: "Bull Analyst A (MiniMax) · Searching: web_search..."
+- Judge stays on plain `_llm_call` with no tool access
+- Thinking blocks appear in real-time during streaming, collapse when message finalizes
+- Same-source thinking content is appended (merged) to avoid duplicate blocks
+
+## 2026-02-18 — Streaming thinking display + auto MD/PDF reports for trade analysis
+
+**What:** Replaced collapsible thinking blocks with a subtle streaming text display that flows smoothly during processing. Added automatic markdown + PDF report generation for every trade analysis, named `{stock_name}_{timestamp}.md/.pdf`.
+
+**Files:**
+- `frontend/src/components/ThinkingBlock.tsx` — rewritten: subtle streaming text with auto-scroll, muted opacity, click-to-expand/collapse, `streaming` prop for live mode
+- `frontend/src/styles/index.css` — modified: replaced heavy `.thinking-block` styles with subtle `.thinking-stream` styles (low opacity, no borders, muted text)
+- `frontend/src/components/ChatView.tsx` — modified: passes `streaming={true}` to in-progress thinking blocks
+- `tools/trade_analyzer.py` — modified: added `_build_report_markdown` (structures debate into sections), `_generate_report` (saves MD + generates PDF via existing `generate_pdf`), returns `files` list in result, new Phase 5 after judge
+- `agent.py` — modified: handles `result["files"]` (list) in addition to `result["file"]` (single) when extracting file paths from tool results
+
+**Details:**
+- Thinking text streams in at 55% opacity during processing, 70% while active streaming, rises to 80% on hover
+- Historical thinking on completed messages starts collapsed, click header to expand
+- Reports saved as `{stock_name}_{YYYYMMDD_HHMMSS}.md` and `.pdf` in `output/` dir
+- MD report includes: verdict, all 4 opening arguments, all 4 rebuttals, data summary (first 5000 chars)
+- PDF generated using existing `generate_pdf` tool then renamed to match naming convention
+- Both files served via `/output/` static mount and appear as download links in chat
+
+## 2026-02-18 — Stop generation button
+
+**What:** Added ability to stop the AI mid-response and correct your message. Textarea stays enabled during generation.
+
+**Files:**
+- `frontend/src/components/ChatView.tsx` — modified: added `handleStop` (aborts SSE, removes optimistic user message, resets state), Send button swaps to red Stop button while sending, Enter while sending stops generation, textarea no longer disabled during sending
+- `frontend/src/styles/index.css` — modified: added `.stop-btn` styles (red background)
+
+**Details:**
+- Stop aborts the SSE fetch, clears thinking blocks and status, removes the pending user message so the user can retype
+- Textarea stays active during generation so the user can type their correction while waiting
+- Enter during generation = stop; Enter again = send the corrected message
+- Stop button uses `var(--error)` color to distinguish from Send
+
+## 2026-02-18 — Data-driven debate prompts (remove emotional tone)
+
+**What:** Rewrote all debate prompts and system messages to enforce strictly quantitative, data-only analysis. Eliminated advocacy framing, combative language, and emotional adjectives.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: rewrote `_BULL_OPENING`, `_BEAR_OPENING`, `_REBUTTAL`, `_JUDGE` prompts and all 3 system messages
+
+**Details:**
+- Bull/bear analysts reframed as "quantitative equity/risk analyst" instead of "buy-side/risk analyst building a case"
+- Explicit ban on subjective adjectives: "禁止使用主观形容词" — no "强劲", "优秀", "令人担忧", "严重"
+- Every claim must include a specific number or it's invalid
+- Rebuttals reframed from "dismantle their points" to "examine data accuracy and completeness"
+- Anti-combative language rule: no "他们忽略了"/"这是错误的", instead "该数据点需补充背景: [具体数据]"
+- Both sides must acknowledge when opposing data is correct — no spinning
+- Judge evaluates data accuracy/completeness, explicitly told to "disregard emotional language, rhetorical flourish, unsubstantiated predictions"
+- System messages changed from "专业的金融分析师" to "量化金融分析师" with "仅基于数据分析" constraint
+
+## 2026-02-18 — Executive summary phase + institutional-quality reports
+
+**What:** Added Phase 5 (executive summary LLM call) after the judge verdict to synthesize the entire debate into a structured, fact-only summary. Rewrote report generation to produce institutional-standard MD/PDF with proper structure.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: added `_SUMMARY` prompt, `_run_summary` function (Phase 5), rewrote `_build_report_markdown` (no raw JSON, proper sections: exec summary → verdict → appendix with full arguments), updated `_generate_report` and `analyze_trade_opportunity` to include summary
+- `tools/output.py` — modified: PDF renderer now handles `---` horizontal rules, numbered lists (`1. ...`), disclaimer footer on every page
+
+**Details:**
+- New Phase 5: executive summary LLM call produces structured output with: 执行摘要, 关键财务指标 table, 多方/空方核心论据, 争议焦点与数据分歧, 风险因素, 结论与建议
+- Summary prompt enforces: every bullet must contain a specific number, no adjectives, 800-1200 words
+- Report structure: exec summary up front (what a PM reads), verdict second, full debate in numbered appendix (A.1-A.8)
+- Removed raw JSON data dump from report — data now lives only in the summary's key metrics table
+- PDF footer: "AI-generated report. For reference only. Not investment advice." + page numbers
+- Pipeline is now 6 phases: data collection → openings → rebuttals → judge → summary → report generation

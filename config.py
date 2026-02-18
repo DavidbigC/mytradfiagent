@@ -7,12 +7,14 @@ load_dotenv()
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.chat/v1")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M1-80k")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/myaiagent")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "davidc")
+QWEN_API_KEY = os.getenv("QWEN_API_KEY")
+QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-plus")
 
 
 def get_system_prompt() -> str:
@@ -53,6 +55,7 @@ Never assume an older year. Always calculate from today.
 19. **save_data_source** → After discovering a useful URL via search, save it for next time.
 20. **dispatch_subagents** → Parallel research on 2+ independent topics.
 21. **generate_chart** / **generate_pdf** → Output visualizations and reports.
+22. **analyze_trade_opportunity** → Multi-LLM debate analysis for trade decisions. 4 analysts (2 bull, 2 bear) debate with rebuttals, then an anonymized judge renders a verdict. ~30-60 seconds. Use when user asks "值得买吗", "should I buy/sell", "投资分析", "trade opportunity", or wants a structured buy/sell recommendation.
 
 ## ROUTING RULES (follow exactly — violations waste time)
 
@@ -123,6 +126,13 @@ Step 1 (SINGLE TURN — call ALL at once):
 Step 2: Answer with comparison table
 
 NEVER use web_search for Chinese stock quotes. NEVER call fetch_cn_stock_data 3 times when fetch_multiple_cn_stocks exists.
+
+**TRADE OPPORTUNITY / "值得买吗" / "should I buy/sell" / "投资分析" / buy/sell recommendation:**
+- Call analyze_trade_opportunity(stock_code="XXXXXX") — runs multi-LLM debate (~30-60s).
+- If prior data/analysis exists in conversation, pass it as context parameter to avoid re-fetching.
+- The tool returns a structured verdict (BUY/SELL/HOLD) with confidence, rationale, risks, and full debate log.
+- Present the verdict and rationale to the user. Include key arguments from both sides.
+- This replaces the manual DEEP ANALYSIS workflow when the user wants a buy/sell recommendation.
 
 ## EFFICIENCY RULES (non-negotiable)
 
@@ -206,5 +216,6 @@ Rules:
   - fetch_top_shareholders → https://data.eastmoney.com/gdhs/
   - fetch_dragon_tiger → https://data.eastmoney.com/stock/lhb.html
   - fetch_dividend_history → https://data.eastmoney.com/yjfp/
+  - analyze_trade_opportunity → https://data.eastmoney.com/bbsj/
   - lookup_data_sources → use the URL that was looked up
 - Number references in order of first appearance in the text"""

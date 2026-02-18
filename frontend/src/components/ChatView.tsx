@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../store";
 import { sendMessage, fetchMessages } from "../api";
-import MessageBubble from "./MessageBubble";
+import MessageBubble, { ThinkingData } from "./MessageBubble";
 import StatusIndicator from "./StatusIndicator";
+import ThinkingBlock from "./ThinkingBlock";
 
 const REF_PATTERN = /\[references\]\s*\n([\s\S]*?)\n\s*\[\/references\]/i;
 const REF_LINE_URL = /\[(\d+)\]\s*(https?:\/\/\S+)/;
@@ -40,6 +41,7 @@ interface Message {
   content: string;
   files?: string[];
   references?: Ref[];
+  thinking?: ThinkingData[];
 }
 
 interface Props {
@@ -53,6 +55,8 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [thinkingBlocks, setThinkingBlocks] = useState<ThinkingData[]>([]);
+  const thinkingBlocksRef = useRef<ThinkingData[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -104,13 +108,36 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setSending(true);
     setStatus("Connecting...");
+    setThinkingBlocks([]);
+    thinkingBlocksRef.current = [];
 
     // Optimistically add user message
     setMessages((prev) => [...prev, { role: "user", content: msg }]);
 
     abortRef.current = sendMessage(token, msg, conversationId, {
       onStatus: (text) => setStatus(text),
+      onThinking: (data) => {
+        setThinkingBlocks((prev) => {
+          // Merge content for same source (append), add new sources
+          const existing = prev.find((t) => t.source === data.source);
+          let next: ThinkingData[];
+          if (existing) {
+            next = prev.map((t) =>
+              t.source === data.source
+                ? { ...t, content: t.content + "\n" + data.content }
+                : t
+            );
+          } else {
+            next = [...prev, data];
+          }
+          thinkingBlocksRef.current = next;
+          return next;
+        });
+      },
       onDone: (data) => {
+        const attachedThinking = thinkingBlocksRef.current.length > 0
+          ? thinkingBlocksRef.current
+          : undefined;
         setMessages((prev) => [
           ...prev,
           {
@@ -118,8 +145,11 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
             content: data.text,
             files: data.files,
             references: data.references,
+            thinking: attachedThinking,
           },
         ]);
+        setThinkingBlocks([]);
+        thinkingBlocksRef.current = [];
         setStatus(null);
         setSending(false);
         onConversationCreated?.();
@@ -133,10 +163,32 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
           ...prev,
           { role: "assistant", content: `Error: ${error}` },
         ]);
+        setThinkingBlocks([]);
+        thinkingBlocksRef.current = [];
         setStatus(null);
         setSending(false);
       },
     });
+  }
+
+  function handleStop() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    // Remove the optimistic user message (last user msg) so the user can re-send
+    setMessages((prev) => {
+      // Find the last user message and remove it (it was the one being processed)
+      const lastUserIdx = prev.map((m) => m.role).lastIndexOf("user");
+      if (lastUserIdx >= 0 && lastUserIdx === prev.length - 1) {
+        return prev.slice(0, lastUserIdx);
+      }
+      return prev;
+    });
+    setThinkingBlocks([]);
+    thinkingBlocksRef.current = [];
+    setStatus(null);
+    setSending(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -145,7 +197,12 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (sending) {
+        // Stop current generation first — user can then hit Enter again to send
+        handleStop();
+      } else {
+        handleSend();
+      }
     }
   }
 
@@ -165,8 +222,16 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
             content={m.content}
             files={m.files}
             references={m.references}
+            thinking={m.thinking}
           />
         ))}
+        {thinkingBlocks.length > 0 && (
+          <div className="thinking-blocks">
+            {thinkingBlocks.map((t) => (
+              <ThinkingBlock key={t.source} label={t.label} content={t.content} streaming={true} />
+            ))}
+          </div>
+        )}
         {status && <StatusIndicator text={status} />}
         <div ref={bottomRef} />
       </div>
@@ -179,11 +244,16 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
           onKeyDown={handleKeyDown}
           placeholder="Ask a question... (Shift+Enter for new line)"
           rows={1}
-          disabled={sending}
         />
-        <button onClick={handleSend} disabled={sending || !input.trim()}>
-          Send
-        </button>
+        {sending ? (
+          <button className="stop-btn" onClick={handleStop}>
+            Stop
+          </button>
+        ) : (
+          <button onClick={handleSend} disabled={!input.trim()}>
+            Send
+          </button>
+        )}
       </div>
     </div>
   );

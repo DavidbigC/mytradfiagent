@@ -385,12 +385,30 @@ async def generate_pdf(title: str, content: str) -> dict:
             pdf.ln(4)
             pdf.set_text_color(*_CLR_TEXT)
             pdf.set_font(font_family, "", 10)
+        elif stripped == "---":
+            # Horizontal rule
+            pdf.ln(3)
+            pdf.set_draw_color(*_CLR_RULE)
+            pdf.set_line_width(0.4)
+            pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+            pdf.set_line_width(0.2)
+            pdf.ln(4)
         elif stripped.startswith(("- ", "* ")):
             bullet = display[2:]
             pdf.set_font(font_family, "", 10)
-            x = pdf.get_x()
             pdf.cell(6, 5.5, chr(8226))  # bullet char
             pdf.multi_cell(w=0, h=5.5, text=bullet, new_x="LMARGIN", new_y="NEXT")
+        elif re.match(r"^\d+\.\s", stripped):
+            # Numbered list
+            num_match = re.match(r"^(\d+\.)\s(.*)", display)
+            if num_match:
+                pdf.set_font(font_family, "B", 10)
+                pdf.cell(8, 5.5, num_match.group(1))
+                pdf.set_font(font_family, "", 10)
+                pdf.multi_cell(w=0, h=5.5, text=num_match.group(2), new_x="LMARGIN", new_y="NEXT")
+            else:
+                pdf.set_font(font_family, "", 10)
+                _mc(pdf, 5.5, display)
         elif stripped:
             pdf.set_font(font_family, "", 10)
             _mc(pdf, 5.5, display)
@@ -405,9 +423,11 @@ async def generate_pdf(title: str, content: str) -> dict:
         pdf.set_y(-15)
         pdf.set_draw_color(*_CLR_RULE)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-        pdf.set_font(font_family, "", 8)
+        pdf.set_font(font_family, "", 7)
         pdf.set_text_color(*_CLR_MUTED)
-        pdf.cell(0, 8, f"Page {pg} / {total}", align="C")
+        pdf.cell(0, 4, "AI-generated report. For reference only. Not investment advice.", align="L")
+        pdf.ln(4)
+        pdf.cell(0, 4, f"Page {pg} / {total}", align="C")
 
     filename = f"report_{uuid.uuid4().hex[:8]}.pdf"
     filepath = os.path.join(OUTPUT_DIR, filename)

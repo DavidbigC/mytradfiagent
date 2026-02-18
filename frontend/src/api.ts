@@ -132,6 +132,7 @@ export interface SSECallbacks {
   onStatus: (text: string) => void;
   onDone: (data: { text: string; files: string[]; references: Array<{ num: string; url: string }> }) => void;
   onError: (error: string) => void;
+  onThinking?: (data: { source: string; label: string; content: string }) => void;
 }
 
 export function sendMessage(
@@ -176,7 +177,15 @@ export function sendMessage(
             currentEvent = line.slice(7).trim();
           } else if (line.startsWith("data: ")) {
             const data = line.slice(6);
-            if (currentEvent === "status") {
+            if (currentEvent === "thinking") {
+              if (callbacks.onThinking) {
+                try {
+                  callbacks.onThinking(JSON.parse(data));
+                } catch {
+                  // ignore malformed thinking events
+                }
+              }
+            } else if (currentEvent === "status") {
               callbacks.onStatus(data);
             } else if (currentEvent === "done") {
               try {

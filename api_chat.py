@@ -115,9 +115,15 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
     async def on_status(text: str):
         await queue.put({"event": "status", "data": text})
 
+    async def on_thinking(source: str, label: str, content: str):
+        await queue.put({
+            "event": "thinking",
+            "data": json.dumps({"source": source, "label": label, "content": content}, ensure_ascii=False),
+        })
+
     async def run_in_background():
         try:
-            result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id)
+            result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
             text = result.get("text", "")
             files = result.get("files", [])
 

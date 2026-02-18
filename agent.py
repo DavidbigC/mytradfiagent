@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import contextvars
 import json
 import logging
 import re
@@ -12,6 +13,17 @@ from tools import TOOL_SCHEMAS, execute_tool
 from accounts import (
     get_active_conversation, get_user_lock,
     load_recent_messages, save_message,
+)
+
+# ContextVar so tools (e.g. trade_analyzer) can emit status updates
+# without changing the execute_tool interface.
+status_callback: contextvars.ContextVar[Callable | None] = contextvars.ContextVar(
+    "status_callback", default=None,
+)
+
+# ContextVar for emitting <think> block content to the frontend.
+thinking_callback: contextvars.ContextVar[Callable | None] = contextvars.ContextVar(
+    "thinking_callback", default=None,
 )
 
 # Max chars per tool result sent to LLM — prevents token explosion from large data dumps
@@ -61,6 +73,7 @@ async def run_agent(
     user_id: UUID,
     on_status: Callable | None = None,
     conversation_id: UUID | None = None,
+    on_thinking: Callable | None = None,
 ) -> dict:
     """Run the agent loop. Returns {"text": str, "files": [path, ...]}.
 
@@ -69,10 +82,11 @@ async def run_agent(
 
     conversation_id: if provided, use this conversation; otherwise use the most recent one.
     on_status: optional async callback(status_text: str) called with progress updates.
+    on_thinking: optional async callback(source, label, content) for <think> blocks.
     """
     lock = get_user_lock(user_id)
     async with lock:
-        return await _run_agent_inner(user_message, user_id, on_status, conversation_id)
+        return await _run_agent_inner(user_message, user_id, on_status, conversation_id, on_thinking)
 
 
 async def _run_agent_inner(
@@ -80,6 +94,7 @@ async def _run_agent_inner(
     user_id: UUID,
     on_status: Callable | None = None,
     conversation_id: UUID | None = None,
+    on_thinking: Callable | None = None,
 ) -> dict:
     conv_id = conversation_id or await get_active_conversation(user_id)
 
@@ -100,11 +115,18 @@ async def _run_agent_inner(
             except Exception:
                 pass
 
+    async def _emit_thinking(source: str, label: str, content: str):
+        if on_thinking:
+            try:
+                await on_thinking(source, label, content)
+            except Exception:
+                pass
+
     files = []
 
     for turn in range(MAX_TURNS):
         logger.info(f"Agent turn {turn + 1}/{MAX_TURNS}")
-        await _emit(f"Thinking... (step {turn + 1})")
+        await _emit(f"MiniMax · Thinking...")
 
         response = await client.chat.completions.create(
             model=MINIMAX_MODEL,
@@ -124,7 +146,9 @@ async def _run_agent_inner(
 
         if not msg.tool_calls:
             text = msg.content or "I couldn't generate a response."
-            # Strip model thinking tags (e.g. MiniMax <think>...</think>)
+            # Extract and emit <think> blocks before stripping
+            for m in re.finditer(r"<think>(.*?)</think>", text, flags=re.DOTALL):
+                await _emit_thinking("agent", "MiniMax Agent", m.group(1).strip())
             text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
             return {"text": text, "files": files}
 
@@ -132,12 +156,19 @@ async def _run_agent_inner(
         tool_names = [tc.function.name for tc in msg.tool_calls]
         await _emit(f"Running: {', '.join(tool_names)}...")
 
-        # Execute all tool calls in parallel
-        t0 = time.time()
-        results = await asyncio.gather(
-            *[_execute_single_tool(tc) for tc in msg.tool_calls]
-        )
-        elapsed = time.time() - t0
+        # Make status/thinking callbacks available to tools via contextvars
+        status_token = status_callback.set(_emit)
+        thinking_token = thinking_callback.set(_emit_thinking)
+        try:
+            # Execute all tool calls in parallel
+            t0 = time.time()
+            results = await asyncio.gather(
+                *[_execute_single_tool(tc) for tc in msg.tool_calls]
+            )
+            elapsed = time.time() - t0
+        finally:
+            status_callback.reset(status_token)
+            thinking_callback.reset(thinking_token)
         logger.info(f"Executed {len(results)} tool(s) in parallel in {elapsed:.2f}s")
 
         tool_results = []
@@ -145,6 +176,8 @@ async def _run_agent_inner(
             result = r["result"]
             if isinstance(result, dict) and "file" in result:
                 files.append(result["file"])
+            if isinstance(result, dict) and "files" in result:
+                files.extend(result["files"])
 
             content = _truncate_result(result)
             tool_results.append({
@@ -173,6 +206,8 @@ async def _run_agent_inner(
             messages=messages,
         )
         summary = response.choices[0].message.content or "I reached the maximum number of steps but couldn't generate a summary."
+        for m in re.finditer(r"<think>(.*?)</think>", summary, flags=re.DOTALL):
+            await _emit_thinking("agent", "MiniMax Agent", m.group(1).strip())
         summary = re.sub(r"<think>.*?</think>\s*", "", summary, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error(f"Summary request failed: {e}")
