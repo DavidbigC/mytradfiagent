@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-02-18 — Reference prior reports in trade analysis
+
+**What:** Trade analyzer now checks the output/ directory for existing reports on the same stock (within 5 days). If found, the most recent report is included in the data pack as a soft reference — analysts can use data points and arguments from it but are instructed not to treat it as authoritative.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: added `_find_prior_report()` function, wired into `_collect_data()` with clear framing that prior reports are reference-only
+
 ## 2026-02-18 — Fix summary timeout + language matching
 
 **What:** Fixed LLM timeout in executive summary phase and made output language match input language instead of hardcoding Chinese.

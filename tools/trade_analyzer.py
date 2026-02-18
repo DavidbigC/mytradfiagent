@@ -37,6 +37,8 @@ _EXCLUDED_TOOLS = {
 MAX_DEBATER_TOOL_ROUNDS = 3
 MAX_DEBATER_TOOL_RESULT_CHARS = 3000
 
+PRIOR_REPORT_MAX_AGE_DAYS = 5
+
 logger = logging.getLogger(__name__)
 
 minimax_client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
@@ -193,6 +195,42 @@ Arguments are labeled Analyst 1-8. You do not know their identity or source mode
 # Phase 1: Data Collection
 # ---------------------------------------------------------------------------
 
+def _find_prior_report(stock_name: str) -> str | None:
+    """Find the most recent MD report for this stock within PRIOR_REPORT_MAX_AGE_DAYS.
+
+    Returns the report content (truncated) or None.
+    """
+    import glob
+    pattern = os.path.join(_OUTPUT_DIR, f"{stock_name}_*.md")
+    matches = glob.glob(pattern)
+    if not matches:
+        return None
+
+    # Sort by modification time, newest first
+    matches.sort(key=os.path.getmtime, reverse=True)
+    newest = matches[0]
+
+    # Check age
+    age_days = (datetime.now().timestamp() - os.path.getmtime(newest)) / 86400
+    if age_days > PRIOR_REPORT_MAX_AGE_DAYS:
+        return None
+
+    try:
+        with open(newest, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return None
+
+    age_str = f"{age_days:.1f} days ago" if age_days >= 1 else f"{age_days * 24:.0f} hours ago"
+    logger.info(f"[TradeAnalyzer] Found prior report: {os.path.basename(newest)} ({age_str})")
+
+    # Cap at 6000 chars to avoid bloating context
+    if len(content) > 6000:
+        content = content[:6000] + "\n...[prior report truncated]"
+
+    return content
+
+
 async def _collect_data(stock_code: str, context: str = "") -> tuple[str, str]:
     """Fetch all data in parallel. Returns (data_pack, stock_name)."""
     tasks = {
@@ -250,6 +288,19 @@ async def _collect_data(stock_code: str, context: str = "") -> tuple[str, str]:
 
     if context:
         sections.append(f"### 补充信息 (来自对话上下文)\n{context}")
+
+    # Check for prior report on this stock
+    prior = _find_prior_report(stock_name)
+    if prior:
+        sections.append(
+            "### PRIOR ANALYSIS (reference only)\n"
+            "A previous report on this stock is shown below. "
+            "You may use specific data points or arguments from it if they are still relevant, "
+            "but do NOT treat it as authoritative. It may contain outdated numbers, missed factors, "
+            "or incorrect conclusions. Always verify against the fresh data above. "
+            "If the prior report conflicts with fresh data, trust the fresh data.\n\n"
+            f"{prior}"
+        )
 
     data_pack = "\n\n".join(sections)
 
