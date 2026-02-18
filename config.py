@@ -44,18 +44,19 @@ Never assume an older year. Always calculate from today.
 8. **screen_cn_stocks** → Screen/rank ALL A-shares (SSE+SZSE, ~5200 stocks) via TradingView. Returns market cap, PE, PB, dividend yield, ROE, revenue, sector, technicals. Sort by any field, filter by any condition. Use for 市值排名, 涨跌幅, 成交额, 高股息筛选, value screening, etc. ~2 seconds.
 9. **scan_market_hotspots** → For "what's hot", trending sectors, 热门题材, 板块轮动. Scrapes portal homepages directly.
 10. **fetch_company_report** → Fetch the latest financial report (年报/季报) from Sina Finance for any A-share company. Returns key financial data, income/balance sheet figures, and PDF link. ~3 seconds.
-11. **fetch_stock_capital_flow** → Daily capital flow for a single A-share stock (~120 trading days). Shows institutional vs retail net buying/selling by order size. Use when asked "who is buying/selling X" or "资金流向".
-12. **fetch_northbound_flow** → Northbound (沪深港通) daily deal volume and count. Note: net inflow data was discontinued after Aug 2024 due to regulatory changes; deal amount/count still available.
-13. **fetch_capital_flow_ranking** → Today's top stocks by institutional net inflow or outflow. Use for "what are institutions buying/selling today" or "主力资金排行".
-14. **fetch_stock_financials** → Structured quarterly financial statements (balance sheet, income, cash flow) from EastMoney. 10+ years of data. Use for financial trend analysis and detailed comparisons across periods.
-15. **fetch_top_shareholders** → Top 10 circulating shareholders (十大流通股东) with holding changes. Track institutional ownership.
-16. **fetch_dragon_tiger** → Dragon Tiger List (龙虎榜) — shows which brokerages were top buyers/sellers on exceptional trading days. Reveals institutional/hot-money patterns.
-17. **fetch_dividend_history** → Complete dividend history (分红送配) with cash per 10 shares, ex-dates, and payout progress.
-18. **web_search** → Google Search via Gemini. Returns synthesized answer + source URLs. Use for general knowledge, news, non-stock queries.
-19. **save_data_source** → After discovering a useful URL via search, save it for next time.
-20. **dispatch_subagents** → Parallel research on 2+ independent topics.
-21. **generate_chart** / **generate_pdf** → Output visualizations and reports.
-22. **analyze_trade_opportunity** → Multi-LLM debate analysis for trade decisions. 4 analysts (2 bull, 2 bear) debate with rebuttals, then an anonymized judge renders a verdict. ~30-60 seconds. Use when user asks "值得买吗", "should I buy/sell", "投资分析", "trade opportunity", or wants a structured buy/sell recommendation.
+11. **fetch_sina_profit_statement** → Detailed profit statement (利润表) from Sina Finance by year. Has interest income/expense breakdown, fee income, investment income, operating costs, etc. Use when you need annual P&L detail beyond what EastMoney quarterly data provides.
+13. **fetch_stock_capital_flow** → Daily capital flow for a single A-share stock (~120 trading days). Shows institutional vs retail net buying/selling by order size. Use when asked "who is buying/selling X" or "资金流向".
+14. **fetch_northbound_flow** → Northbound (沪深港通) daily deal volume and count. Note: net inflow data was discontinued after Aug 2024 due to regulatory changes; deal amount/count still available.
+15. **fetch_capital_flow_ranking** → Today's top stocks by institutional net inflow or outflow. Use for "what are institutions buying/selling today" or "主力资金排行".
+16. **fetch_stock_financials** → Structured quarterly financial statements (balance sheet, income, cash flow) from EastMoney. 10+ years of data. Use for financial trend analysis and detailed comparisons across periods.
+17. **fetch_top_shareholders** → Top 10 circulating shareholders (十大流通股东) with holding changes. Track institutional ownership.
+18. **fetch_dragon_tiger** → Dragon Tiger List (龙虎榜) — shows which brokerages were top buyers/sellers on exceptional trading days. Reveals institutional/hot-money patterns.
+19. **fetch_dividend_history** → Complete dividend history (分红送配) with cash per 10 shares, ex-dates, and payout progress.
+20. **web_search** → Google Search via Gemini. Returns synthesized answer + source URLs. Use for general knowledge, news, non-stock queries.
+21. **save_data_source** → After discovering a useful URL via search, save it for next time.
+22. **dispatch_subagents** → Parallel research on 2+ independent topics.
+23. **generate_chart** / **generate_pdf** → Output visualizations and reports.
+24. **analyze_trade_opportunity** → Multi-LLM debate analysis for trade decisions. 4 analysts (2 bull, 2 bear) debate with rebuttals, then an anonymized judge renders a verdict. ~30-60 seconds. Use when user asks "值得买吗", "should I buy/sell", "投资分析", "trade opportunity", or wants a structured buy/sell recommendation.
 
 ## ROUTING RULES (follow exactly — violations waste time)
 
@@ -206,6 +207,7 @@ Rules:
   - fetch_cn_fund_holdings → https://fund.eastmoney.com/
   - fetch_cn_bond_data → https://yield.chinabond.com.cn/
   - fetch_company_report → https://vip.stock.finance.sina.com.cn/
+  - fetch_sina_profit_statement → https://money.finance.sina.com.cn/
   - web_search → use the actual source URLs from search results
   - scrape_webpage → use the scraped URL
   - scan_market_hotspots → https://finance.eastmoney.com/

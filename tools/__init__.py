@@ -17,7 +17,10 @@ from tools.sources import (
 )
 from tools.market_scan import scan_market_hotspots, SCAN_MARKET_HOTSPOTS_SCHEMA
 from tools.cn_screener import screen_cn_stocks, SCREEN_CN_STOCKS_SCHEMA
-from tools.sina_reports import fetch_company_report, FETCH_COMPANY_REPORT_SCHEMA
+from tools.sina_reports import (
+    fetch_company_report, FETCH_COMPANY_REPORT_SCHEMA,
+    fetch_sina_profit_statement, FETCH_SINA_PROFIT_SCHEMA,
+)
 from tools.cn_capital_flow import (
     fetch_stock_capital_flow, fetch_northbound_flow, fetch_capital_flow_ranking,
     FETCH_STOCK_CAPITAL_FLOW_SCHEMA, FETCH_NORTHBOUND_FLOW_SCHEMA, FETCH_CAPITAL_FLOW_RANKING_SCHEMA,
@@ -47,6 +50,7 @@ TOOL_SCHEMAS = [
     SCAN_MARKET_HOTSPOTS_SCHEMA,
     SCREEN_CN_STOCKS_SCHEMA,
     FETCH_COMPANY_REPORT_SCHEMA,
+    FETCH_SINA_PROFIT_SCHEMA,
     FETCH_STOCK_CAPITAL_FLOW_SCHEMA,
     FETCH_NORTHBOUND_FLOW_SCHEMA,
     FETCH_CAPITAL_FLOW_RANKING_SCHEMA,
@@ -75,6 +79,7 @@ TOOL_MAP = {
     "scan_market_hotspots": scan_market_hotspots,
     "screen_cn_stocks": screen_cn_stocks,
     "fetch_company_report": fetch_company_report,
+    "fetch_sina_profit_statement": fetch_sina_profit_statement,
     "fetch_stock_capital_flow": fetch_stock_capital_flow,
     "fetch_northbound_flow": fetch_northbound_flow,
     "fetch_capital_flow_ranking": fetch_capital_flow_ranking,

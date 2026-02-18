@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-02-18 — Fix Debate stock extraction + add Sina profit statement tool
+
+**What:** Fixed critical bug where Debate button couldn't find the stock code (was only scanning assistant/tool messages, missing user messages where the stock name lives). Also added `fetch_sina_profit_statement` tool for structured annual profit data from Sina Finance.
+
+**Files:**
+- `agent.py` — fixed `_run_debate_inner`: now scans ALL message types (user/assistant/tool) for stock code; tries regex first (fast), falls back to LLM extraction
+- `tools/sina_reports.py` — added `fetch_sina_profit_statement()` and `FETCH_SINA_PROFIT_SCHEMA`: scrapes `money.finance.sina.com.cn` profit statement tables by stock code and year
+- `tools/__init__.py` — registered new tool in TOOL_SCHEMAS and TOOL_MAP
+- `config.py` — added tool #11 description, citation URL mapping, renumbered tools 12-24
+
 ## 2026-02-18 — Add dedicated Debate button
 
 **What:** Added a "Debate" button in the chat UI that directly invokes the multi-LLM trade analyzer without going through the agent loop. Extracts stock code from conversation context via a quick LLM call, passes gathered conversation data as context to avoid re-fetching. Works with or without typed input.

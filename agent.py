@@ -268,42 +268,43 @@ async def _run_debate_inner(
     # Step 1: Extract stock code from conversation
     await _emit("Identifying stock code...")
 
-    # Build context from recent assistant/tool messages
+    # Build context from ALL message types (user messages contain stock names!)
     context_parts = []
-    for m in messages[-20:]:  # last 20 messages
-        if m.get("role") in ("assistant", "tool") and m.get("content"):
-            context_parts.append(m["content"][:2000])
-    conversation_context = "\n---\n".join(context_parts)
+    for m in messages[-20:]:
+        role = m.get("role", "")
+        content = m.get("content", "")
+        if content and role in ("user", "assistant", "tool"):
+            context_parts.append(f"[{role}]: {content[:2000]}")
+    conversation_context = "\n".join(context_parts)
     if len(conversation_context) > 8000:
         conversation_context = conversation_context[:8000]
 
-    extract_prompt = f"""From the user message and conversation below, extract the 6-digit Chinese A-share stock code (e.g. 600036, 002028, 000858).
+    # First try: regex extraction from user message + conversation (no LLM needed)
+    stock_code = ""
+    all_text = user_message + "\n" + conversation_context
+    code_match = re.search(r"(?<!\d)\d{6}(?!\d)", all_text)
+    if code_match:
+        stock_code = code_match.group(0)
+        logger.info(f"[Debate] Extracted stock code via regex: {stock_code}")
 
-User message: {user_message}
-
-Recent conversation:
-{conversation_context[:3000]}
-
-Reply with ONLY the 6-digit stock code. If no stock is mentioned or you can't determine it, reply with NONE."""
-
-    try:
-        resp = await client.chat.completions.create(
-            model=MINIMAX_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract the stock code. Reply with only the 6-digit code or NONE."},
-                {"role": "user", "content": extract_prompt},
-            ],
-            temperature=0,
-            max_tokens=20,
-        )
-        stock_code = (resp.choices[0].message.content or "").strip()
-        # Clean up — extract just the digits
-        import re as _re
-        code_match = _re.search(r"\d{6}", stock_code)
-        stock_code = code_match.group(0) if code_match else ""
-    except Exception as e:
-        logger.error(f"Stock code extraction failed: {e}")
-        stock_code = ""
+    # Fallback: LLM extraction if regex didn't find one
+    if not stock_code:
+        try:
+            resp = await client.chat.completions.create(
+                model=MINIMAX_MODEL,
+                messages=[
+                    {"role": "system", "content": "Extract the 6-digit Chinese A-share stock code from the conversation. Reply with ONLY the code or NONE."},
+                    {"role": "user", "content": f"User message: {user_message}\n\nConversation:\n{conversation_context[:3000]}"},
+                ],
+                temperature=0,
+                max_tokens=20,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            code_match = re.search(r"\d{6}", raw)
+            stock_code = code_match.group(0) if code_match else ""
+        except Exception as e:
+            logger.error(f"Stock code extraction failed: {e}")
+            stock_code = ""
 
     if not stock_code:
         text = "Could not identify a stock code from the conversation. Please mention a specific stock (e.g. 600036 招商银行) and try again."

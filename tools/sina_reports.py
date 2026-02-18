@@ -185,6 +185,90 @@ def _extract_pdf_link(html: str) -> str | None:
     return None
 
 
+FETCH_SINA_PROFIT_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "fetch_sina_profit_statement",
+        "description": (
+            "Fetch the detailed profit statement (利润表) for a Chinese A-share stock from Sina Finance. "
+            "Returns quarterly income data for the given year: revenue, interest income/expense, "
+            "fee income, investment income, operating costs, operating profit, net profit, EPS, etc. "
+            "Useful when EastMoney financials are insufficient or you need Sina's format."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "stock_code": {
+                    "type": "string",
+                    "description": "6-digit stock code, e.g. '600000', '002028'",
+                },
+                "year": {
+                    "type": "integer",
+                    "description": "Year to fetch, e.g. 2025, 2024. Defaults to current year.",
+                },
+            },
+            "required": ["stock_code"],
+        },
+    },
+}
+
+
+async def fetch_sina_profit_statement(stock_code: str, year: int | None = None) -> dict:
+    """Fetch structured profit statement from Sina Finance for a given year."""
+    from datetime import datetime as _dt
+    code = stock_code.strip()
+    if len(code) != 6 or not code.isdigit():
+        return {"error": f"Invalid stock code: {code}. Must be 6 digits."}
+
+    if year is None:
+        year = _dt.now().year
+
+    url = f"https://money.finance.sina.com.cn/corp/go.php/vFD_ProfitStatement/stockid/{code}/ctrl/{year}/displaytype/4.phtml"
+
+    try:
+        html = await _fetch_page(url)
+    except Exception as e:
+        return {"error": f"Failed to fetch profit statement: {e}", "url": url}
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Find the main data table
+    table = soup.find("table", id="ProfitStatementNewTable0")
+    if not table:
+        # Fallback: find the largest table
+        tables = soup.find_all("table")
+        table = max(tables, key=lambda t: len(t.find_all("tr")), default=None)
+
+    if not table:
+        return {"error": "Could not find profit statement table", "url": url}
+
+    # Parse the table
+    rows = []
+    for tr in table.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+        if cells and any(c for c in cells):
+            rows.append(cells)
+
+    if not rows:
+        return {"error": "Table found but contains no data", "url": url}
+
+    # First row is usually the header (report dates)
+    headers = rows[0] if rows else []
+    data_rows = []
+    for row in rows[1:]:
+        if len(row) >= 2:
+            data_rows.append({"item": row[0], "values": row[1:]})
+
+    return {
+        "stock_code": code,
+        "year": year,
+        "url": url,
+        "headers": headers,
+        "data": data_rows,
+        "row_count": len(data_rows),
+    }
+
+
 async def fetch_company_report(stock_code: str, report_type: str) -> dict:
     """Fetch the latest financial report for a Chinese A-share company."""
     code = stock_code.strip()
