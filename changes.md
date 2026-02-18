@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-02-18 — Fix summary timeout + language matching
+
+**What:** Fixed LLM timeout in executive summary phase and made output language match input language instead of hardcoding Chinese.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: increased `_run_summary` timeout to 120s / max_tokens to 3000; replaced all "Write in Chinese (书面语)" with language-matching instructions; added graceful fallback when summary LLM call fails (falls back to verdict instead of showing error string in report)
+
 ## 2026-02-17 — Archive Telegram bot, web-only startup
 
 **What:** Moved Telegram bot component to `archive/` since the web app is the primary interface. Simplified `start.py` to web-only.

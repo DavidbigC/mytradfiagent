@@ -94,7 +94,7 @@ Rules:
 - No adjectives like "强劲", "优秀", "令人印象深刻". State the number and let it speak.
 - Where data is unfavorable, state it factually. Do not minimize or explain away.
 - End with: PRICE TARGET RATIONALE (based on valuation math, not sentiment) and CONVICTION LEVEL (1-10).
-- 600-800 words. Write in Chinese (书面语). Maintain a neutral, clinical tone throughout.
+- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
 
 === DATA ===
 {data_pack}"""
@@ -119,7 +119,7 @@ Rules:
 - No adjectives like "令人担忧", "严重", "危险". State the number and let it speak.
 - Where data is actually positive, state it factually. Do not dismiss or undermine.
 - End with: DOWNSIDE RISK ESTIMATE (based on valuation math, not fear) and CONVICTION LEVEL (1-10).
-- 600-800 words. Write in Chinese (书面语). Maintain a neutral, clinical tone throughout.
+- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
 
 === DATA ===
 {data_pack}"""
@@ -143,7 +143,7 @@ Rules:
 - Do not use combative language ("他们忽略了", "这是错误的"). Instead: "该数据点需补充背景: [具体数据]".
 - If the opposing side made a valid point with correct data, acknowledge it explicitly.
 - Every counter-point must include a specific number.
-- 300-500 words. Write in Chinese (书面语). Maintain a neutral, clinical tone.
+- 300-500 words. Write in the same language as the debate content. Maintain a neutral, clinical tone.
 
 === ORIGINAL DATA FOR REFERENCE ===
 {data_pack}"""
@@ -160,7 +160,7 @@ Evaluation criteria (in order of importance):
 
 Disregard: emotional language, rhetorical flourish, unsubstantiated predictions, appeals to market sentiment.
 
-You MUST produce a response in EXACTLY this structure (in Chinese):
+You MUST produce a response in EXACTLY this structure (in the same language as the analyst arguments):
 
 **判定: BUY / SELL / HOLD**
 (HOLD only if both sides have equal data support — not as a safe default)
@@ -616,7 +616,7 @@ Rules:
 - No adjectives like "强劲", "令人担忧", "优秀". Numbers only.
 - Do not repeat the judge verdict verbatim — synthesize and restructure.
 - 800-1200 words total.
-- Write in Chinese (书面语).
+- Write in the same language as the debate content and data provided.
 
 === JUDGE VERDICT ===
 {verdict}
@@ -676,6 +676,7 @@ async def _run_summary(
         minimax_client, MINIMAX_MODEL, system, prompt,
         source="summary", label="Summary Editor (MiniMax)",
         thinking_fn=thinking_fn,
+        timeout=120, max_tokens=3000,
     )
 
 
@@ -852,6 +853,10 @@ async def analyze_trade_opportunity(stock_code: str, context: str = "") -> dict:
     await _status("MiniMax · Synthesizing executive summary...")
     logger.info("[TradeAnalyzer] Phase 5: Executive summary (1 LLM call)")
     summary = await _run_summary(stock_code, stock_name, data_pack, openings, rebuttals, verdict, thinking_fn=_thinking)
+    # Graceful fallback if summary generation failed
+    if summary.startswith("(LLM") or summary.startswith("("):
+        logger.warning(f"[TradeAnalyzer] Summary failed: {summary}, using verdict as fallback")
+        summary = verdict
     logger.info("[TradeAnalyzer] Executive summary complete")
 
     # Phase 6: Generate MD + PDF report
