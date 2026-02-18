@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from db import get_pool
 from auth import get_current_user
 from accounts import new_conversation
-from agent import run_agent
+from agent import run_agent, run_debate
 from tools.output import parse_references
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 class SendBody(BaseModel):
     message: str
     conversation_id: str | None = None
+    mode: str | None = None  # "debate" to invoke trade analyzer directly
 
 
 @router.get("/conversations")
@@ -123,7 +124,10 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
 
     async def run_in_background():
         try:
-            result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
+            if body.mode == "debate":
+                result = await run_debate(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
+            else:
+                result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
             text = result.get("text", "")
             files = result.get("files", [])
 

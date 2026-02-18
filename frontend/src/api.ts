@@ -139,14 +139,15 @@ export function sendMessage(
   token: string,
   message: string,
   conversationId: string | null,
-  callbacks: SSECallbacks
+  callbacks: SSECallbacks,
+  mode?: string,
 ): AbortController {
   const controller = new AbortController();
 
   fetch(`${BASE}/api/chat/send`, {
     method: "POST",
     headers: headers(token),
-    body: JSON.stringify({ message, conversation_id: conversationId }),
+    body: JSON.stringify({ message, conversation_id: conversationId, mode: mode || null }),
     signal: controller.signal,
   })
     .then(async (res) => {

@@ -1012,6 +1012,14 @@ html, body, #root {
   cursor: not-allowed;
 }
 
+.input-area .debate-btn {
+  background: #2c3e50;
+}
+
+.input-area .debate-btn:hover:not(:disabled) {
+  background: #1a252f;
+}
+
 .input-area .stop-btn {
   background: var(--error);
 }

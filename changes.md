@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-02-18 — Add dedicated Debate button
+
+**What:** Added a "Debate" button in the chat UI that directly invokes the multi-LLM trade analyzer without going through the agent loop. Extracts stock code from conversation context via a quick LLM call, passes gathered conversation data as context to avoid re-fetching. Works with or without typed input.
+
+**Files:**
+- `agent.py` — added `run_debate()` and `_run_debate_inner()`: extracts stock code from conversation, calls `analyze_trade_opportunity` directly with conversation context
+- `api_chat.py` — added `mode` field to `SendBody`, routes `mode="debate"` to `run_debate()`
+- `frontend/src/api.ts` — added `mode` parameter to `sendMessage()`
+- `frontend/src/components/ChatView.tsx` — added Debate button, `handleDebate()`, refactored `handleSend()` to accept mode and override message
+- `frontend/src/styles/index.css` — added `.debate-btn` styles (dark slate color)
+
 ## 2026-02-18 — Reference prior reports in trade analysis
 
 **What:** Trade analyzer now checks the output/ directory for existing reports on the same stock (within 5 days). If found, the most recent report is included in the data pack as a soft reference — analysts can use data points and arguments from it but are instructed not to treat it as authoritative.

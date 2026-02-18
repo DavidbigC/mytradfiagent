@@ -99,15 +99,15 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
 
-  function handleSend() {
-    const msg = input.trim();
+  function handleSend(mode?: string, overrideMsg?: string) {
+    const msg = overrideMsg || input.trim();
     if (!msg || !token || sending) return;
 
     setInput("");
     // Reset textarea height after clearing
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setSending(true);
-    setStatus("Connecting...");
+    setStatus(mode === "debate" ? "Starting debate..." : "Connecting...");
     setThinkingBlocks([]);
     thinkingBlocksRef.current = [];
 
@@ -168,7 +168,12 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
         setStatus(null);
         setSending(false);
       },
-    });
+    }, mode);
+  }
+
+  function handleDebate() {
+    const msg = input.trim() || "Run debate analysis on the stock discussed above";
+    handleSend("debate", msg);
   }
 
   function handleStop() {
@@ -250,9 +255,14 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
             Stop
           </button>
         ) : (
-          <button onClick={handleSend} disabled={!input.trim()}>
-            Send
-          </button>
+          <>
+            <button onClick={() => handleSend()} disabled={!input.trim()}>
+              Send
+            </button>
+            <button className="debate-btn" onClick={handleDebate}>
+              Debate
+            </button>
+          </>
         )}
       </div>
     </div>

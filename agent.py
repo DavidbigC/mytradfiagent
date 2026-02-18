@@ -218,6 +218,122 @@ async def _run_agent_inner(
     return {"text": summary, "files": files}
 
 
+async def run_debate(
+    user_message: str,
+    user_id: UUID,
+    on_status: Callable | None = None,
+    conversation_id: UUID | None = None,
+    on_thinking: Callable | None = None,
+) -> dict:
+    """Run the debate system directly, bypassing the agent loop.
+
+    1. Use a quick LLM call to extract the stock code from user message + conversation history
+    2. Gather recent conversation content as context
+    3. Call analyze_trade_opportunity directly
+    """
+    lock = get_user_lock(user_id)
+    async with lock:
+        return await _run_debate_inner(user_message, user_id, on_status, conversation_id, on_thinking)
+
+
+async def _run_debate_inner(
+    user_message: str,
+    user_id: UUID,
+    on_status: Callable | None = None,
+    conversation_id: UUID | None = None,
+    on_thinking: Callable | None = None,
+) -> dict:
+    conv_id = conversation_id or await get_active_conversation(user_id)
+
+    # Load recent history
+    messages = await load_recent_messages(conv_id)
+
+    # Save the user message
+    await save_message(conv_id, "user", user_message)
+
+    async def _emit(text: str):
+        if on_status:
+            try:
+                await on_status(text)
+            except Exception:
+                pass
+
+    async def _emit_thinking(source: str, label: str, content: str):
+        if on_thinking:
+            try:
+                await on_thinking(source, label, content)
+            except Exception:
+                pass
+
+    # Step 1: Extract stock code from conversation
+    await _emit("Identifying stock code...")
+
+    # Build context from recent assistant/tool messages
+    context_parts = []
+    for m in messages[-20:]:  # last 20 messages
+        if m.get("role") in ("assistant", "tool") and m.get("content"):
+            context_parts.append(m["content"][:2000])
+    conversation_context = "\n---\n".join(context_parts)
+    if len(conversation_context) > 8000:
+        conversation_context = conversation_context[:8000]
+
+    extract_prompt = f"""From the user message and conversation below, extract the 6-digit Chinese A-share stock code (e.g. 600036, 002028, 000858).
+
+User message: {user_message}
+
+Recent conversation:
+{conversation_context[:3000]}
+
+Reply with ONLY the 6-digit stock code. If no stock is mentioned or you can't determine it, reply with NONE."""
+
+    try:
+        resp = await client.chat.completions.create(
+            model=MINIMAX_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract the stock code. Reply with only the 6-digit code or NONE."},
+                {"role": "user", "content": extract_prompt},
+            ],
+            temperature=0,
+            max_tokens=20,
+        )
+        stock_code = (resp.choices[0].message.content or "").strip()
+        # Clean up — extract just the digits
+        import re as _re
+        code_match = _re.search(r"\d{6}", stock_code)
+        stock_code = code_match.group(0) if code_match else ""
+    except Exception as e:
+        logger.error(f"Stock code extraction failed: {e}")
+        stock_code = ""
+
+    if not stock_code:
+        text = "Could not identify a stock code from the conversation. Please mention a specific stock (e.g. 600036 招商银行) and try again."
+        await save_message(conv_id, "assistant", text)
+        return {"text": text, "files": []}
+
+    await _emit(f"Starting debate analysis for {stock_code}...")
+
+    # Step 2: Run trade analyzer directly
+    status_token = status_callback.set(_emit)
+    thinking_token = thinking_callback.set(_emit_thinking)
+    try:
+        from tools.trade_analyzer import analyze_trade_opportunity
+        result = await analyze_trade_opportunity(stock_code, context=conversation_context)
+    finally:
+        status_callback.reset(status_token)
+        thinking_callback.reset(thinking_token)
+
+    # Build response text
+    verdict = result.get("verdict", "")
+    summary = result.get("summary", "")
+    stock_name = result.get("stock_name", stock_code)
+    files = result.get("files", [])
+
+    text = f"## {stock_name} ({stock_code}) Debate Analysis\n\n{summary}\n\n---\n\n{verdict}"
+
+    await save_message(conv_id, "assistant", text)
+    return {"text": text, "files": files}
+
+
 def _message_to_dict(msg) -> dict:
     """Convert an OpenAI message object to a serializable dict."""
     d = {"role": msg.role, "content": msg.content or ""}
