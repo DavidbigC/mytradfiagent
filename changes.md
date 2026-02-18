@@ -474,3 +474,25 @@
 - Removed raw JSON data dump from report — data now lives only in the summary's key metrics table
 - PDF footer: "AI-generated report. For reference only. Not investment advice." + page numbers
 - Pipeline is now 6 phases: data collection → openings → rebuttals → judge → summary → report generation
+
+## 2026-02-18 — UI Language Toggle (English / 中文)
+
+**What:** Added a lightweight i18n system with a language toggle so users can switch the UI between English and Chinese.
+
+**Files:**
+- `frontend/src/i18n.tsx` — created: translations dict (~40 keys), `LanguageProvider` context, `useT()` hook, defaults to Chinese, persists choice in localStorage
+- `frontend/src/main.tsx` — modified: wrapped app with `<LanguageProvider>`
+- `frontend/src/pages/LoginPage.tsx` — modified: replaced hardcoded strings with `t(...)` calls
+- `frontend/src/pages/ChatLayout.tsx` — modified: replaced debate modal strings with `t(...)`
+- `frontend/src/components/Sidebar.tsx` — modified: replaced strings with `t(...)`, added language toggle button
+- `frontend/src/components/ChatView.tsx` — modified: replaced strings with `t(...)`
+- `frontend/src/components/AdminPanel.tsx` — modified: replaced strings with `t(...)`
+- `frontend/src/components/ThinkingBlock.tsx` — modified: replaced "show"/"hide" with `t(...)`
+- `frontend/src/components/ReferenceCard.tsx` — modified: replaced "References" with `t(...)`
+- `frontend/src/styles/index.css` — modified: added `.lang-toggle` button styles
+
+**Details:**
+- No external i18n library — custom React context with ~40 translation keys for 2 languages
+- Default language is Chinese (`zh`), persisted in `localStorage` under key `lang`
+- Toggle button in sidebar footer shows "EN" when in Chinese mode, "中" when in English mode
+- All user-facing strings translated: login, sidebar, chat, debate modal, thinking blocks, references, admin panel
