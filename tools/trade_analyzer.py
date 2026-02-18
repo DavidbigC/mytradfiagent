@@ -76,6 +76,14 @@ ANALYZE_TRADE_SCHEMA = {
 # Prompts
 # ---------------------------------------------------------------------------
 
+# Shared unit conversion rule — added to every debater/judge/summary prompt.
+_UNIT_RULE = """- CRITICAL UNIT CONVERSION: 1 billion = 10亿, NOT 1亿. Data in the pack may use raw numbers (e.g. 170,750,000,000 = 1707.5亿). When the data says "XXX billion", multiply by 10 to get 亿. Examples:
+  - 170.75 billion CNY = 1707.5亿元 (NOT 170.75亿)
+  - 41.15 billion = 411.5亿 (NOT 41.15亿)
+  - 1,322,800,000,000 = 13228亿 (÷ 100,000,000)
+  - Unit: 万元 means 10,000 CNY. 13,228,000万元 = 1322.8亿元.
+  Always double-check your unit conversions before citing a number."""
+
 _BULL_OPENING = """You are a quantitative equity analyst. Your task: identify data points that support a positive outlook for {stock_name} ({stock_code}).
 
 Analyze each dimension below. For each, state the relevant numbers, compute ratios or trends where applicable, and assess whether the data is favorable. If the data is inconclusive or negative for a given dimension, say so plainly — do not spin it.
@@ -97,6 +105,7 @@ Rules:
 - Where data is unfavorable, state it factually. Do not minimize or explain away.
 - End with: PRICE TARGET RATIONALE (based on valuation math, not sentiment) and CONVICTION LEVEL (1-10).
 - 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
+""" + _UNIT_RULE + """
 
 === DATA ===
 {data_pack}"""
@@ -122,6 +131,7 @@ Rules:
 - Where data is actually positive, state it factually. Do not dismiss or undermine.
 - End with: DOWNSIDE RISK ESTIMATE (based on valuation math, not fear) and CONVICTION LEVEL (1-10).
 - 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
+""" + _UNIT_RULE + """
 
 === DATA ===
 {data_pack}"""
@@ -146,6 +156,7 @@ Rules:
 - If the opposing side made a valid point with correct data, acknowledge it explicitly.
 - Every counter-point must include a specific number.
 - 300-500 words. Write in the same language as the debate content. Maintain a neutral, clinical tone.
+""" + _UNIT_RULE + """
 
 === ORIGINAL DATA FOR REFERENCE ===
 {data_pack}"""
@@ -183,6 +194,8 @@ The single most compelling data point from the losing side, with the exact numbe
 **时间维度:** 短期 (1-3月) / 中期 (3-12月) / 长期 (1-3年)
 
 Arguments are labeled Analyst 1-8. You do not know their identity or source model. Judge only the data.
+
+""" + _UNIT_RULE + """
 
 === MARKET DATA SUMMARY ===
 {data_summary}
@@ -491,7 +504,7 @@ async def _run_opening_round(stock_code: str, stock_name: str, data_pack: str, s
     bear_prompt = _BEAR_OPENING.format(
         stock_name=stock_name, stock_code=stock_code, data_pack=data_pack,
     )
-    system = "你是一位量化金融分析师。仅基于数据进行分析。禁止使用主观形容词。每个论点必须附带具体数字。"
+    system = "你是一位量化金融分析师。仅基于数据进行分析。禁止使用主观形容词。每个论点必须附带具体数字。注意单位换算：1 billion = 10亿，数据中的万元需÷10000得到亿元。"
 
     bull_a, bull_b, bear_a, bear_b = await asyncio.gather(
         _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, bull_prompt,
@@ -525,7 +538,7 @@ async def _run_rebuttal_round(
     status_fn=None, thinking_fn=None,
 ) -> dict:
     """Each debater rebuts the opposing side, sees ally's argument."""
-    system = "你是一位量化金融分析师。请核查对方数据的准确性和完整性。仅用数据回应，禁止情绪化措辞。"
+    system = "你是一位量化金融分析师。请核查对方数据的准确性和完整性。仅用数据回应，禁止情绪化措辞。注意单位换算：1 billion = 10亿。"
 
     # Bull-A rebuts bears, sees Bull-B as ally
     bull_a_rebuttal = _REBUTTAL.format(
@@ -668,6 +681,7 @@ Rules:
 - Do not repeat the judge verdict verbatim — synthesize and restructure.
 - 800-1200 words total.
 - Write in the same language as the debate content and data provided.
+""" + _UNIT_RULE + """
 
 === JUDGE VERDICT ===
 {verdict}

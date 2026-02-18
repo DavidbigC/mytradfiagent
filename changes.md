@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-02-18 — Remove Gemini + fix billion/亿 unit conversion
+
+**What:** Removed Gemini dependency (expensive), DuckDuckGo is now the sole search backend. Fixed critical unit conversion confusion where agents treated "billion" as "亿" (should be 10亿). Added explicit conversion rules to all 5 debate prompts and 3 system messages.
+
+**Files:**
+- `tools/web.py` — removed Gemini import, `_gemini_search_sync`, simplified `web_search` to DDG only
+- `config.py` — removed `GEMINI_API_KEY`, updated web_search description
+- `requirements.txt` — removed `google-genai`
+- `tools/trade_analyzer.py` — added `_UNIT_RULE` constant with conversion examples, injected into all 5 prompts (_BULL_OPENING, _BEAR_OPENING, _REBUTTAL, _JUDGE, _SUMMARY) and 2 system messages
+
 ## 2026-02-18 — Fix Debate stock extraction + add Sina profit statement tool
 
 **What:** Fixed critical bug where Debate button couldn't find the stock code (was only scanning assistant/tool messages, missing user messages where the stock name lives). Also added `fetch_sina_profit_statement` tool for structured annual profit data from Sina Finance.

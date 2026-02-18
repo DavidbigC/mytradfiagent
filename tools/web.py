@@ -2,7 +2,6 @@ import asyncio
 import logging
 import httpx
 from bs4 import BeautifulSoup
-from config import GEMINI_API_KEY
 
 try:
     from ddgs import DDGS
@@ -19,9 +18,8 @@ WEB_SEARCH_SCHEMA = {
     "function": {
         "name": "web_search",
         "description": (
-            "Search the web using Google (via Gemini). Returns a synthesized answer with source URLs. "
-            "Powered by Gemini + Google Search grounding — fast and accurate for Chinese market data, "
-            "current events, and factual lookups."
+            "Search the web using DuckDuckGo. Returns source URLs with titles and snippets. "
+            "Fast and free for Chinese market data, current events, and factual lookups."
         ),
         "parameters": {
             "type": "object",
@@ -49,49 +47,6 @@ SCRAPE_WEBPAGE_SCHEMA = {
 }
 
 
-GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro"]
-
-
-def _gemini_search_sync(query: str) -> dict:
-    """Use Gemini with Google Search grounding for fast, sourced answers."""
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    # Try models in order until one works
-    last_error = None
-    for model in GEMINI_MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=query,
-                config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())],
-                    temperature=0,
-                ),
-            )
-            break
-        except Exception as e:
-            last_error = e
-            logger.warning(f"Gemini model {model} failed: {e}")
-            continue
-    else:
-        raise last_error
-
-    result = {"answer": response.text}
-
-    # Extract source URLs from grounding metadata
-    sources = []
-    candidate = response.candidates[0] if response.candidates else None
-    if candidate and candidate.grounding_metadata and candidate.grounding_metadata.grounding_chunks:
-        for chunk in candidate.grounding_metadata.grounding_chunks:
-            if chunk.web:
-                sources.append({"title": chunk.web.title, "url": chunk.web.uri})
-    result["sources"] = sources
-    return result
-
-
 def _ddg_search_sync(query: str, max_results: int = 5) -> dict:
     """Fallback: DuckDuckGo search."""
     if DDGS is None:
@@ -105,14 +60,6 @@ def _ddg_search_sync(query: str, max_results: int = 5) -> dict:
 
 
 async def web_search(query: str) -> dict:
-    # Primary: Gemini with Google Search grounding
-    if GEMINI_API_KEY:
-        try:
-            return await asyncio.to_thread(_gemini_search_sync, query)
-        except Exception as e:
-            logger.warning(f"Gemini search failed, falling back to DDG: {e}")
-
-    # Fallback: DuckDuckGo
     return await asyncio.to_thread(_ddg_search_sync, query)
 
 

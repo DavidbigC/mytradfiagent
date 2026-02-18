@@ -7,7 +7,6 @@ load_dotenv()
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.chat/v1")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M1-80k")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/myaiagent")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
@@ -52,7 +51,7 @@ Never assume an older year. Always calculate from today.
 17. **fetch_top_shareholders** → Top 10 circulating shareholders (十大流通股东) with holding changes. Track institutional ownership.
 18. **fetch_dragon_tiger** → Dragon Tiger List (龙虎榜) — shows which brokerages were top buyers/sellers on exceptional trading days. Reveals institutional/hot-money patterns.
 19. **fetch_dividend_history** → Complete dividend history (分红送配) with cash per 10 shares, ex-dates, and payout progress.
-20. **web_search** → Google Search via Gemini. Returns synthesized answer + source URLs. Use for general knowledge, news, non-stock queries.
+20. **web_search** → Web search via DuckDuckGo. Returns source URLs with snippets. Use for general knowledge, news, non-stock queries.
 21. **save_data_source** → After discovering a useful URL via search, save it for next time.
 22. **dispatch_subagents** → Parallel research on 2+ independent topics.
 23. **generate_chart** / **generate_pdf** → Output visualizations and reports.

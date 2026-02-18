@@ -10,7 +10,6 @@ weasyprint
 python-dotenv
 duckduckgo-search
 asyncpg
-google-genai
 fastapi
 uvicorn[standard]
 PyJWT
