@@ -1012,14 +1012,6 @@ html, body, #root {
   cursor: not-allowed;
 }
 
-.input-area .debate-btn {
-  background: #2c3e50;
-}
-
-.input-area .debate-btn:hover:not(:disabled) {
-  background: #1a252f;
-}
-
 .input-area .stop-btn {
   background: var(--error);
 }
@@ -1071,6 +1063,126 @@ html, body, #root {
   .input-area {
     padding: 12px;
   }
+}
+
+/* Sidebar Debate Button */
+.sidebar-header .debate-btn {
+  width: 100%;
+  margin-top: 8px;
+  background: #2c3e50;
+  color: #fff;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.sidebar-header .debate-btn:hover {
+  background: #1a252f;
+}
+
+/* Debate Modal */
+.debate-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.debate-modal {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 90vw;
+  max-width: 520px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.debate-modal h3 {
+  color: var(--accent);
+  margin-bottom: 8px;
+  font-size: 1.2rem;
+}
+
+.debate-modal p {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.debate-modal textarea {
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  min-height: 70px;
+  transition: border-color 0.2s;
+}
+
+.debate-modal textarea:focus {
+  border-color: var(--accent);
+}
+
+.debate-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.debate-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.debate-cancel:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.debate-submit {
+  background: #2c3e50;
+  color: #fff;
+  border: none;
+  padding: 8px 22px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.debate-submit:hover:not(:disabled) {
+  background: #1a252f;
+}
+
+.debate-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Scrollbar */

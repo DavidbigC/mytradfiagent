@@ -50,9 +50,9 @@ ANALYZE_TRADE_SCHEMA = {
         "name": "analyze_trade_opportunity",
         "description": (
             "Deep trade opportunity analysis using multi-LLM debate. "
-            "4 analysts (2 bull, 2 bear) argue with evidence, then a judge synthesizes. "
+            "4 analysts (2 pro, 2 con) argue with evidence, then a judge synthesizes. "
             "Use when user asks for trade analysis, 'should I buy/sell X', '值得买吗', "
-            "'投资分析', or trade opportunity assessment. "
+            "'投资分析', stock comparisons, sector analysis, or any investment question. "
             "Takes ~30-60 seconds. Returns structured verdict with confidence score."
         ),
         "parameters": {
@@ -60,14 +60,18 @@ ANALYZE_TRADE_SCHEMA = {
             "properties": {
                 "stock_code": {
                     "type": "string",
-                    "description": "6-digit A-share stock code (e.g. '600036')",
+                    "description": "6-digit A-share stock code (e.g. '600036'). Optional if question is provided.",
+                },
+                "question": {
+                    "type": "string",
+                    "description": "Investment question to debate (e.g. '招商银行 vs 工商银行哪个更好', '银行板块还会涨吗'). If omitted, defaults to '{stock_code} 值得投资吗?'",
                 },
                 "context": {
                     "type": "string",
                     "description": "Optional: existing data/analysis from conversation to avoid re-fetching",
                 },
             },
-            "required": ["stock_code"],
+            "required": [],
         },
     },
 }
@@ -84,9 +88,43 @@ _UNIT_RULE = """- CRITICAL UNIT CONVERSION: 1 billion = 10亿, NOT 1亿. Data in
   - Unit: 万元 means 10,000 CNY. 13,228,000万元 = 1322.8亿元.
   Always double-check your unit conversions before citing a number."""
 
-_BULL_OPENING = """You are a quantitative equity analyst. Your task: identify data points that support a positive outlook for {stock_name} ({stock_code}).
+_PRO_OPENING = """You are a quantitative analyst. Your task: identify data points that SUPPORT the following hypothesis:
+**H₀: {hypothesis}**
 
-Analyze each dimension below. For each, state the relevant numbers, compute ratios or trends where applicable, and assess whether the data is favorable. If the data is inconclusive or negative for a given dimension, say so plainly — do not spin it.
+{dimensions_text}
+
+You have access to research tools (web search, financial data lookups). Use them only when the provided data lacks a specific number you need.
+
+Rules:
+- Every claim must cite a specific number: "营收同比+15.3%至42.1亿元 (Q3 2025)" — never "营收在增长".
+- No adjectives like "强劲", "优秀", "令人印象深刻". State the number and let it speak.
+- Where data is unfavorable to the hypothesis, state it factually. Do not minimize or explain away.
+- End with: KEY EVIDENCE SUMMARY (the 3 strongest data points supporting H₀) and CONVICTION LEVEL (1-10).
+- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
+""" + _UNIT_RULE + """
+
+=== DATA ===
+{data_pack}"""
+
+_CON_OPENING = """You are a quantitative risk analyst. Your task: identify data points that REJECT the following hypothesis:
+**H₀: {hypothesis}**
+
+{dimensions_text}
+
+You have access to research tools (web search, financial data lookups). Use them only when the provided data lacks a specific number you need.
+
+Rules:
+- Every claim must cite a specific number: "净利率从28.1%降至22.4% (连续4个季度)" — never "利润率在下降".
+- No adjectives like "令人担忧", "严重", "危险". State the number and let it speak.
+- Where data actually supports the hypothesis, state it factually. Do not dismiss or undermine.
+- End with: KEY COUNTER-EVIDENCE (the 3 strongest data points against H₀) and CONVICTION LEVEL (1-10).
+- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
+""" + _UNIT_RULE + """
+
+=== DATA ===
+{data_pack}"""
+
+_DIMENSIONS_SINGLE_STOCK = """Analyze each dimension below. For each, state the relevant numbers, compute ratios or trends where applicable.
 
 1. VALUATION: Current PE/PB vs 5-year historical range and sector median. Percentile rank.
 2. EARNINGS TRAJECTORY: Revenue and net profit QoQ/YoY growth rates. Is growth accelerating, stable, or decelerating? Cite exact figures.
@@ -95,48 +133,53 @@ Analyze each dimension below. For each, state the relevant numbers, compute rati
 5. CAPITAL FLOW: Net institutional flow direction and magnitude from the data. Quantify.
 6. SHAREHOLDER CHANGES: Top holder position changes — 增持/减持/新进. Net direction.
 7. DIVIDEND: Trailing yield, payout ratio, consistency over last 3+ years.
-8. FORWARD CATALYSTS: Based strictly on data trends (not speculation), what measurable improvements could continue?
+8. FORWARD OUTLOOK: Based strictly on data trends (not speculation), what measurable changes could continue?"""
 
-You have access to research tools (web search, financial data lookups). Use them only when the provided data lacks a specific number you need.
+_DIMENSIONS_COMPARISON = """Compare the two entities across each dimension below. For each, cite specific numbers from both sides.
 
-Rules:
-- Every claim must cite a specific number: "营收同比+15.3%至42.1亿元 (Q3 2025)" — never "营收在增长".
-- No adjectives like "强劲", "优秀", "令人印象深刻". State the number and let it speak.
-- Where data is unfavorable, state it factually. Do not minimize or explain away.
-- End with: PRICE TARGET RATIONALE (based on valuation math, not sentiment) and CONVICTION LEVEL (1-10).
-- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
-""" + _UNIT_RULE + """
+1. VALUATION: PE/PB for each entity. Which trades at a discount/premium and by how much?
+2. EARNINGS: Revenue and profit growth rates for each. Which has better trajectory?
+3. BALANCE SHEET: Debt-to-asset and leverage for each. Which has stronger financial position?
+4. CASH FLOW: OCF/net income ratio for each. Which has better earnings quality?
+5. CAPITAL FLOW: Institutional flow comparison. Which is seeing more net inflow?
+6. SHAREHOLDER CHANGES: Top holder activity for each. Net direction comparison.
+7. DIVIDEND: Yield and sustainability for each. Which offers better shareholder returns?
+8. RELATIVE MERIT: Based strictly on data, what measurable advantages does each have?"""
 
-=== DATA ===
-{data_pack}"""
+_DIMENSIONS_SECTOR = """Analyze the sector/market across these dimensions:
 
-_BEAR_OPENING = """You are a quantitative risk analyst. Your task: identify data points that indicate risk or negative outlook for {stock_name} ({stock_code}).
+1. VALUATION: Sector average PE/PB vs historical range. Where are we in the cycle?
+2. EARNINGS TREND: Aggregate sector revenue/profit growth. Accelerating or decelerating?
+3. CAPITAL FLOW: Institutional and northbound flow into/out of the sector. Quantify.
+4. MARKET STRUCTURE: Which stocks lead the sector? Concentration of gains/losses.
+5. CATALYSTS: Data-backed factors that could drive the sector. Policy, rates, macro indicators.
+6. RISK FACTORS: Measurable headwinds from the data.
 
-Analyze each dimension below. For each, state the relevant numbers, compute ratios or trends where applicable, and assess whether the data signals risk. If the data is actually positive for a given dimension, say so plainly — do not force a negative interpretation.
+"""
 
-1. VALUATION: Current PE/PB vs 5-year historical range and sector median. What growth rate is implied? Is that realistic given recent trends?
-2. EARNINGS RISK: Revenue/profit growth deceleration, margin compression, non-recurring income inflating results. Cite exact figures.
-3. BALANCE SHEET RISK: Debt-to-asset trend, leverage changes, asset quality indicators. Quantify the trajectory.
-4. CASH FLOW: OCF/net income divergence (earnings quality concern if ratio < 0.8). Capex intensity vs FCF.
-5. CAPITAL FLOW: Net institutional outflow signals. Quantify magnitude and duration.
-6. SHAREHOLDER CHANGES: Top holder 减持/退出 patterns. Net direction.
-7. DIVIDEND SUSTAINABILITY: Payout ratio vs earnings trend. Can current yield be maintained if earnings decline X%?
-8. RISK FACTORS: Based strictly on data trends (not speculation), what measurable deterioration could continue?
+_DIMENSIONS_GENERAL = """Analyze the question across these dimensions:
 
-You have access to research tools (web search, financial data lookups). Use them only when the provided data lacks a specific number you need.
+1. VALUATION: Relevant market/sector valuations vs historical range.
+2. MACRO INDICATORS: Interest rates, capital flows, relevant economic data.
+3. MARKET SENTIMENT: Institutional positioning and flow data. Quantify.
+4. HISTORICAL PATTERNS: Similar data patterns from the past and outcomes.
+5. RISK FACTORS: Measurable risks from the data.
+6. OPPORTUNITY SIGNALS: Data points that support the thesis."""
 
-Rules:
-- Every claim must cite a specific number: "净利率从28.1%降至22.4% (连续4个季度)" — never "利润率在下降".
-- No adjectives like "令人担忧", "严重", "危险". State the number and let it speak.
-- Where data is actually positive, state it factually. Do not dismiss or undermine.
-- End with: DOWNSIDE RISK ESTIMATE (based on valuation math, not fear) and CONVICTION LEVEL (1-10).
-- 600-800 words. Write in the same language as the user query and data provided. Maintain a neutral, clinical tone throughout.
-""" + _UNIT_RULE + """
 
-=== DATA ===
-{data_pack}"""
+def _get_dimensions_text(question_type: str) -> str:
+    """Return the appropriate dimensions text based on question type."""
+    return {
+        "single_stock": _DIMENSIONS_SINGLE_STOCK,
+        "comparison": _DIMENSIONS_COMPARISON,
+        "sector": _DIMENSIONS_SECTOR,
+        "general": _DIMENSIONS_GENERAL,
+    }.get(question_type, _DIMENSIONS_GENERAL)
 
-_REBUTTAL = """You previously analyzed the {side} data for {stock_name} ({stock_code}). Below are the opposing analysts' findings, followed by your co-analyst's findings.
+_REBUTTAL = """You previously analyzed data {side} the hypothesis:
+**H₀: {hypothesis}**
+
+Below are the opposing analysts' findings, followed by your co-analyst's findings.
 
 === OPPOSING ANALYSIS ===
 {opposing_args}
@@ -161,13 +204,15 @@ Rules:
 === ORIGINAL DATA FOR REFERENCE ===
 {data_pack}"""
 
-_JUDGE = """You are a quantitative portfolio committee chair. You have received analysis from 4 anonymous analysts — 2 identifying positive signals, 2 identifying risk signals — followed by their cross-examination.
+_JUDGE = """You are a quantitative portfolio committee chair. You have received analysis from 4 anonymous analysts — 2 supporting a hypothesis, 2 rejecting it — followed by their cross-examination.
 
-Your task: Determine which direction the data supports, based SOLELY on factual accuracy and data completeness.
+**Hypothesis under review (H₀): {hypothesis}**
+
+Your task: Determine whether the data supports or rejects H₀, based SOLELY on factual accuracy and data completeness.
 
 Evaluation criteria (in order of importance):
 1. DATA ACCURACY: Which analysts cited verifiable numbers? Flag any claims that lack specific figures.
-2. COMPLETENESS: Which side addressed more of the 8 analysis dimensions with actual data?
+2. COMPLETENESS: Which side addressed more analysis dimensions with actual data?
 3. CONSISTENCY: Do the cited numbers agree with each other and with the raw data summary?
 4. CROSS-EXAMINATION: Did the rebuttals identify real data errors, or were they rhetorical?
 
@@ -175,8 +220,8 @@ Disregard: emotional language, rhetorical flourish, unsubstantiated predictions,
 
 You MUST produce a response in EXACTLY this structure (in the same language as the analyst arguments):
 
-**判定: BUY / SELL / HOLD**
-(HOLD only if both sides have equal data support — not as a safe default)
+**判定: {verdict_option_1} / {verdict_option_2} / {verdict_option_3}**
+(Choose the third option only if both sides have equal data support — not as a safe default)
 
 **置信度: X/10**
 
@@ -338,6 +383,253 @@ def _format_data(data) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Phase 0: Hypothesis Formation
+# ---------------------------------------------------------------------------
+
+_HYPOTHESIS_PROMPT = """You are a research analyst assistant. Given a user's investment question, form a testable hypothesis and a data collection plan.
+
+Available data-fetching tools (name → parameters):
+- web_search(query: str)
+- scrape_webpage(url: str)
+- fetch_cn_stock_data(symbol: str, info_type: "quote"|"history", period?: "daily"|"weekly"|"monthly", days?: int)
+- fetch_multiple_cn_stocks(symbols: list[str], info_type: "quote"|"history")
+- fetch_stock_financials(stock_code: str, statement: "balance"|"income"|"cashflow", periods?: int)
+- fetch_top_shareholders(stock_code: str, periods?: int)
+- fetch_dividend_history(stock_code: str)
+- fetch_stock_capital_flow(stock_code: str, days?: int)
+- fetch_northbound_flow(days?: int)
+- fetch_capital_flow_ranking(direction?: "inflow"|"outflow", limit?: int)
+- scan_market_hotspots()
+- screen_cn_stocks(sort_by?: str, sort_order?: "desc"|"asc", limit?: int, filters?: list)
+- fetch_company_report(stock_code: str, report_type: "yearly"|"q1"|"mid"|"q3")
+- fetch_sina_profit_statement(stock_code: str, year?: int)
+- fetch_dragon_tiger(stock_code: str, limit?: int)
+- fetch_cn_bond_data(bond_type: "treasury_yield"|"corporate")
+- fetch_stock_data(symbol: str, info_type: "quote"|"history"|"financials", period?: str) — for US stocks
+- fetch_multiple_stocks(symbols: list[str], info_type: "quote"|"history") — for US stocks
+
+EXAMPLES:
+
+Example 1 — Single stock question:
+Question: "浦发银行值得投资吗"
+{
+  "hypothesis": "浦发银行当前估值下值得投资",
+  "question_type": "single_stock",
+  "entities": [{"type": "stock", "code": "600000", "name": "浦发银行"}],
+  "data_plan": [
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "income", "periods": 8}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "balance", "periods": 4}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "cashflow", "periods": 4}},
+    {"tool": "fetch_cn_stock_data", "args": {"symbol": "600000", "info_type": "quote"}},
+    {"tool": "fetch_stock_capital_flow", "args": {"stock_code": "600000", "days": 20}},
+    {"tool": "fetch_top_shareholders", "args": {"stock_code": "600000", "periods": 2}},
+    {"tool": "fetch_dividend_history", "args": {"stock_code": "600000"}}
+  ],
+  "pro_framing": "支持假设：浦发银行当前估值下值得投资",
+  "con_framing": "反对假设：浦发银行当前不值得投资",
+  "verdict_options": ["支持H₀ (买入)", "反对H₀ (回避)", "证据不足 (观望)"],
+  "report_title": "浦发银行 (600000) 投资分析报告"
+}
+
+Example 2 — Stock comparison:
+Question: "招商银行和工商银行哪个更值得投资"
+{
+  "hypothesis": "招商银行比工商银行更值得投资",
+  "question_type": "comparison",
+  "entities": [{"type": "stock", "code": "600036", "name": "招商银行"}, {"type": "stock", "code": "601398", "name": "工商银行"}],
+  "data_plan": [
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "600036", "statement": "income", "periods": 8}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "600036", "statement": "balance", "periods": 4}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "600036", "statement": "cashflow", "periods": 4}},
+    {"tool": "fetch_cn_stock_data", "args": {"symbol": "600036", "info_type": "quote"}},
+    {"tool": "fetch_stock_capital_flow", "args": {"stock_code": "600036", "days": 20}},
+    {"tool": "fetch_top_shareholders", "args": {"stock_code": "600036", "periods": 2}},
+    {"tool": "fetch_dividend_history", "args": {"stock_code": "600036"}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "601398", "statement": "income", "periods": 8}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "601398", "statement": "balance", "periods": 4}},
+    {"tool": "fetch_stock_financials", "args": {"stock_code": "601398", "statement": "cashflow", "periods": 4}},
+    {"tool": "fetch_cn_stock_data", "args": {"symbol": "601398", "info_type": "quote"}},
+    {"tool": "fetch_stock_capital_flow", "args": {"stock_code": "601398", "days": 20}},
+    {"tool": "fetch_top_shareholders", "args": {"stock_code": "601398", "periods": 2}},
+    {"tool": "fetch_dividend_history", "args": {"stock_code": "601398"}}
+  ],
+  "pro_framing": "支持假设：招商银行比工商银行更值得投资",
+  "con_framing": "反对假设：工商银行比招商银行更值得投资",
+  "verdict_options": ["支持H₀ (招商银行更优)", "反对H₀ (工商银行更优)", "证据不足 (两者相当)"],
+  "report_title": "招商银行 vs 工商银行 对比分析报告"
+}
+
+Example 3 — Sector analysis:
+Question: "银行板块还会涨吗"
+{
+  "hypothesis": "银行板块将继续上涨",
+  "question_type": "sector",
+  "entities": [{"type": "sector", "name": "银行板块"}],
+  "data_plan": [
+    {"tool": "screen_cn_stocks", "args": {"filters": [{"field": "sector", "op": "equal", "value": "银行"}], "sort_by": "market_cap_basic", "limit": 10}},
+    {"tool": "scan_market_hotspots", "args": {}},
+    {"tool": "fetch_northbound_flow", "args": {"days": 30}},
+    {"tool": "fetch_capital_flow_ranking", "args": {"direction": "inflow", "limit": 20}},
+    {"tool": "web_search", "args": {"query": "银行板块 走势 分析 2025"}}
+  ],
+  "pro_framing": "支持假设：银行板块将继续上涨",
+  "con_framing": "反对假设：银行板块上涨动力不足或将回调",
+  "verdict_options": ["支持H₀ (看涨)", "反对H₀ (看跌/回调)", "证据不足 (方向不明)"],
+  "report_title": "银行板块走势分析报告"
+}
+
+Example 4 — General market question:
+Question: "现在适合抄底吗"
+{
+  "hypothesis": "当前市场处于底部区域，适合买入",
+  "question_type": "general",
+  "entities": [{"type": "market", "name": "A股市场"}],
+  "data_plan": [
+    {"tool": "scan_market_hotspots", "args": {}},
+    {"tool": "fetch_northbound_flow", "args": {"days": 30}},
+    {"tool": "fetch_capital_flow_ranking", "args": {"direction": "inflow", "limit": 20}},
+    {"tool": "fetch_cn_bond_data", "args": {"bond_type": "treasury_yield"}},
+    {"tool": "screen_cn_stocks", "args": {"sort_by": "change_from_open", "sort_order": "asc", "limit": 20}},
+    {"tool": "web_search", "args": {"query": "A股 市场 估值 底部 分析 2025"}}
+  ],
+  "pro_framing": "支持假设：当前市场处于底部，适合买入",
+  "con_framing": "反对假设：市场尚未见底，不适合买入",
+  "verdict_options": ["支持H₀ (适合买入)", "反对H₀ (继续观望)", "证据不足 (方向不明)"],
+  "report_title": "A股市场抄底时机分析报告"
+}
+
+RULES:
+- Output valid JSON only, no other text.
+- The hypothesis must be a concrete, testable statement (not a question).
+- data_plan: max 20 tool calls. Choose tools relevant to the question type.
+- For single_stock: always include income/balance/cashflow/quote/capital_flow/shareholders/dividends (7 standard tools).
+- For comparison: include the 7 standard tools for each stock.
+- For sector/general: use screener, hotspots, flows, and web search.
+- pro_framing and con_framing should be concise instructions for the analysts.
+- verdict_options must have exactly 3 options.
+- report_title should be descriptive and in the same language as the question.
+- Match the language of the user's question for hypothesis, framings, and title.
+
+USER QUESTION: __QUESTION__
+"""
+
+
+async def _form_hypothesis(user_question: str, context: str = "", thinking_fn=None) -> dict:
+    """Phase 0: Parse user question into a testable hypothesis and data plan."""
+    prompt = _HYPOTHESIS_PROMPT.replace("__QUESTION__", user_question)
+    if context:
+        prompt += f"\n\nADDITIONAL CONTEXT FROM CONVERSATION:\n{context[:2000]}"
+
+    system = "You are a structured data extraction assistant. Output valid JSON only."
+
+    raw = await _llm_call(
+        minimax_client, MINIMAX_MODEL, system, prompt,
+        source="hypothesis", label="Hypothesis Formation",
+        thinking_fn=thinking_fn, timeout=60, max_tokens=2000,
+    )
+
+    # Parse JSON from response (handle markdown code fences)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+
+    try:
+        hypothesis = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error(f"[TradeAnalyzer] Failed to parse hypothesis JSON: {raw[:500]}")
+        # Fallback: treat the whole question as a single stock if we can extract a code
+        code_match = re.search(r"(?<!\d)\d{6}(?!\d)", user_question)
+        stock_code = code_match.group(0) if code_match else "000001"
+        hypothesis = {
+            "hypothesis": f"{user_question}",
+            "question_type": "single_stock",
+            "entities": [{"type": "stock", "code": stock_code, "name": stock_code}],
+            "data_plan": [
+                {"tool": "fetch_stock_financials", "args": {"stock_code": stock_code, "statement": "income", "periods": 8}},
+                {"tool": "fetch_stock_financials", "args": {"stock_code": stock_code, "statement": "balance", "periods": 4}},
+                {"tool": "fetch_stock_financials", "args": {"stock_code": stock_code, "statement": "cashflow", "periods": 4}},
+                {"tool": "fetch_cn_stock_data", "args": {"symbol": stock_code, "info_type": "quote"}},
+                {"tool": "fetch_stock_capital_flow", "args": {"stock_code": stock_code, "days": 20}},
+                {"tool": "fetch_top_shareholders", "args": {"stock_code": stock_code, "periods": 2}},
+                {"tool": "fetch_dividend_history", "args": {"stock_code": stock_code}},
+            ],
+            "pro_framing": f"支持: {user_question}",
+            "con_framing": f"反对: {user_question}",
+            "verdict_options": ["支持H₀ (买入)", "反对H₀ (回避)", "证据不足 (观望)"],
+            "report_title": f"{user_question} 分析报告",
+        }
+
+    # Validate and cap data_plan
+    if "data_plan" in hypothesis:
+        hypothesis["data_plan"] = hypothesis["data_plan"][:20]
+
+    logger.info(f"[TradeAnalyzer] Hypothesis formed: {hypothesis.get('hypothesis', '')}")
+    logger.info(f"[TradeAnalyzer] Question type: {hypothesis.get('question_type', 'unknown')}, "
+                f"Data plan: {len(hypothesis.get('data_plan', []))} tool calls")
+
+    return hypothesis
+
+
+async def _collect_data_from_plan(
+    data_plan: list[dict], context: str = "", entities: list[dict] | None = None,
+) -> str:
+    """Execute a data collection plan in parallel. Returns formatted data pack string."""
+    if not data_plan:
+        return "(No data plan provided)"
+
+    # Execute all tools from data_plan in parallel
+    async def _run_one(item: dict):
+        tool_name = item.get("tool", "")
+        args = item.get("args", {})
+        label = f"{tool_name}({', '.join(f'{k}={v}' for k, v in args.items())})"
+        try:
+            result = await _execute_tool(tool_name, args)
+            return label, result
+        except Exception as e:
+            logger.warning(f"Data plan tool {tool_name} failed: {e}")
+            return label, {"error": str(e)}
+
+    results = await asyncio.gather(*[_run_one(item) for item in data_plan], return_exceptions=True)
+
+    # Format results into sections
+    sections = []
+    for r in results:
+        if isinstance(r, Exception):
+            sections.append(f"### (tool failed)\n{r}")
+        else:
+            label, data = r
+            sections.append(f"### {label}\n{_format_data(data)}")
+
+    if context:
+        sections.append(f"### 补充信息 (来自对话上下文)\n{context}")
+
+    # Check for prior reports matching any entity
+    if entities:
+        for entity in entities:
+            name = entity.get("name", "")
+            if name:
+                prior = _find_prior_report(name)
+                if prior:
+                    sections.append(
+                        f"### PRIOR ANALYSIS for {name} (reference only)\n"
+                        "A previous report is shown below. "
+                        "You may use specific data points if still relevant, "
+                        "but do NOT treat it as authoritative. Always verify against fresh data.\n\n"
+                        f"{prior}"
+                    )
+                    break  # Only include one prior report
+
+    data_pack = "\n\n".join(sections)
+
+    # Truncate if too long
+    if len(data_pack) > 30000:
+        data_pack = data_pack[:30000] + "\n...[数据已截断]"
+
+    return data_pack
+
+
+# ---------------------------------------------------------------------------
 # Helpers for tool-augmented debaters
 # ---------------------------------------------------------------------------
 
@@ -496,36 +788,40 @@ async def _llm_call(client: AsyncOpenAI, model: str, system: str, user: str, sou
         return f"(LLM调用失败: {e})"
 
 
-async def _run_opening_round(stock_code: str, stock_name: str, data_pack: str, status_fn=None, thinking_fn=None) -> dict:
-    """Run 4 parallel opening arguments: 2 bull (MiniMax+Qwen), 2 bear (MiniMax+Qwen)."""
-    bull_prompt = _BULL_OPENING.format(
-        stock_name=stock_name, stock_code=stock_code, data_pack=data_pack,
+async def _run_opening_round(hypothesis: dict, data_pack: str, status_fn=None, thinking_fn=None) -> dict:
+    """Run 4 parallel opening arguments: 2 pro-H₀ (MiniMax+Qwen), 2 con-H₀ (MiniMax+Qwen)."""
+    h = hypothesis.get("hypothesis", "")
+    question_type = hypothesis.get("question_type", "general")
+    dimensions_text = _get_dimensions_text(question_type)
+
+    pro_prompt = _PRO_OPENING.format(
+        hypothesis=h, dimensions_text=dimensions_text, data_pack=data_pack,
     )
-    bear_prompt = _BEAR_OPENING.format(
-        stock_name=stock_name, stock_code=stock_code, data_pack=data_pack,
+    con_prompt = _CON_OPENING.format(
+        hypothesis=h, dimensions_text=dimensions_text, data_pack=data_pack,
     )
     system = "你是一位量化金融分析师。仅基于数据进行分析。禁止使用主观形容词。每个论点必须附带具体数字。注意单位换算：1 billion = 10亿，数据中的万元需÷10000得到亿元。"
 
-    bull_a, bull_b, bear_a, bear_b = await asyncio.gather(
-        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, bull_prompt,
-                             label="Bull Analyst A (MiniMax)", source="bull_a",
+    pro_a, pro_b, con_a, con_b = await asyncio.gather(
+        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, pro_prompt,
+                             label="Pro-H₀ Analyst A (MiniMax)", source="pro_a",
                              status_fn=status_fn, thinking_fn=thinking_fn),
-        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, bull_prompt,
-                             label="Bull Analyst B (Qwen)", source="bull_b",
+        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, pro_prompt,
+                             label="Pro-H₀ Analyst B (Qwen)", source="pro_b",
                              status_fn=status_fn, thinking_fn=thinking_fn),
-        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, bear_prompt,
-                             label="Bear Analyst A (MiniMax)", source="bear_a",
+        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, con_prompt,
+                             label="Con-H₀ Analyst A (MiniMax)", source="con_a",
                              status_fn=status_fn, thinking_fn=thinking_fn),
-        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, bear_prompt,
-                             label="Bear Analyst B (Qwen)", source="bear_b",
+        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, con_prompt,
+                             label="Con-H₀ Analyst B (Qwen)", source="con_b",
                              status_fn=status_fn, thinking_fn=thinking_fn),
     )
 
     return {
-        "bull_a": bull_a,   # MiniMax bull
-        "bull_b": bull_b,   # Qwen bull
-        "bear_a": bear_a,   # MiniMax bear
-        "bear_b": bear_b,   # Qwen bear
+        "pro_a": pro_a,   # MiniMax pro
+        "pro_b": pro_b,   # Qwen pro
+        "con_a": con_a,   # MiniMax con
+        "con_b": con_b,   # Qwen con
     }
 
 
@@ -534,57 +830,58 @@ async def _run_opening_round(stock_code: str, stock_name: str, data_pack: str, s
 # ---------------------------------------------------------------------------
 
 async def _run_rebuttal_round(
-    stock_code: str, stock_name: str, data_pack: str, openings: dict,
+    hypothesis: dict, data_pack: str, openings: dict,
     status_fn=None, thinking_fn=None,
 ) -> dict:
     """Each debater rebuts the opposing side, sees ally's argument."""
+    h = hypothesis.get("hypothesis", "")
     system = "你是一位量化金融分析师。请核查对方数据的准确性和完整性。仅用数据回应，禁止情绪化措辞。注意单位换算：1 billion = 10亿。"
 
-    # Bull-A rebuts bears, sees Bull-B as ally
-    bull_a_rebuttal = _REBUTTAL.format(
-        side="看多 (bull)", stock_name=stock_name, stock_code=stock_code,
-        opposing_args=f"--- 看空分析师1 ---\n{openings['bear_a']}\n\n--- 看空分析师2 ---\n{openings['bear_b']}",
-        ally_arg=openings["bull_b"], data_pack=data_pack,
+    # Pro-A rebuts cons, sees Pro-B as ally
+    pro_a_rebuttal = _REBUTTAL.format(
+        side="supporting (支持H₀)", hypothesis=h,
+        opposing_args=f"--- 反方分析师1 ---\n{openings['con_a']}\n\n--- 反方分析师2 ---\n{openings['con_b']}",
+        ally_arg=openings["pro_b"], data_pack=data_pack,
     )
-    # Bull-B rebuts bears, sees Bull-A as ally
-    bull_b_rebuttal = _REBUTTAL.format(
-        side="看多 (bull)", stock_name=stock_name, stock_code=stock_code,
-        opposing_args=f"--- 看空分析师1 ---\n{openings['bear_a']}\n\n--- 看空分析师2 ---\n{openings['bear_b']}",
-        ally_arg=openings["bull_a"], data_pack=data_pack,
+    # Pro-B rebuts cons, sees Pro-A as ally
+    pro_b_rebuttal = _REBUTTAL.format(
+        side="supporting (支持H₀)", hypothesis=h,
+        opposing_args=f"--- 反方分析师1 ---\n{openings['con_a']}\n\n--- 反方分析师2 ---\n{openings['con_b']}",
+        ally_arg=openings["pro_a"], data_pack=data_pack,
     )
-    # Bear-A rebuts bulls, sees Bear-B as ally
-    bear_a_rebuttal = _REBUTTAL.format(
-        side="看空 (bear)", stock_name=stock_name, stock_code=stock_code,
-        opposing_args=f"--- 看多分析师1 ---\n{openings['bull_a']}\n\n--- 看多分析师2 ---\n{openings['bull_b']}",
-        ally_arg=openings["bear_b"], data_pack=data_pack,
+    # Con-A rebuts pros, sees Con-B as ally
+    con_a_rebuttal = _REBUTTAL.format(
+        side="rejecting (反对H₀)", hypothesis=h,
+        opposing_args=f"--- 正方分析师1 ---\n{openings['pro_a']}\n\n--- 正方分析师2 ---\n{openings['pro_b']}",
+        ally_arg=openings["con_b"], data_pack=data_pack,
     )
-    # Bear-B rebuts bulls, sees Bear-A as ally
-    bear_b_rebuttal = _REBUTTAL.format(
-        side="看空 (bear)", stock_name=stock_name, stock_code=stock_code,
-        opposing_args=f"--- 看多分析师1 ---\n{openings['bull_a']}\n\n--- 看多分析师2 ---\n{openings['bull_b']}",
-        ally_arg=openings["bear_a"], data_pack=data_pack,
+    # Con-B rebuts pros, sees Con-A as ally
+    con_b_rebuttal = _REBUTTAL.format(
+        side="rejecting (反对H₀)", hypothesis=h,
+        opposing_args=f"--- 正方分析师1 ---\n{openings['pro_a']}\n\n--- 正方分析师2 ---\n{openings['pro_b']}",
+        ally_arg=openings["con_a"], data_pack=data_pack,
     )
 
-    r_bull_a, r_bull_b, r_bear_a, r_bear_b = await asyncio.gather(
-        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, bull_a_rebuttal,
-                             label="Bull Analyst A (MiniMax) Rebuttal", source="bull_a_rebuttal",
+    r_pro_a, r_pro_b, r_con_a, r_con_b = await asyncio.gather(
+        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, pro_a_rebuttal,
+                             label="Pro-H₀ Analyst A (MiniMax) Rebuttal", source="pro_a_rebuttal",
                              status_fn=status_fn, thinking_fn=thinking_fn),
-        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, bull_b_rebuttal,
-                             label="Bull Analyst B (Qwen) Rebuttal", source="bull_b_rebuttal",
+        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, pro_b_rebuttal,
+                             label="Pro-H₀ Analyst B (Qwen) Rebuttal", source="pro_b_rebuttal",
                              status_fn=status_fn, thinking_fn=thinking_fn),
-        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, bear_a_rebuttal,
-                             label="Bear Analyst A (MiniMax) Rebuttal", source="bear_a_rebuttal",
+        _llm_call_with_tools(minimax_client, MINIMAX_MODEL, system, con_a_rebuttal,
+                             label="Con-H₀ Analyst A (MiniMax) Rebuttal", source="con_a_rebuttal",
                              status_fn=status_fn, thinking_fn=thinking_fn),
-        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, bear_b_rebuttal,
-                             label="Bear Analyst B (Qwen) Rebuttal", source="bear_b_rebuttal",
+        _llm_call_with_tools(qwen_client, QWEN_MODEL, system, con_b_rebuttal,
+                             label="Con-H₀ Analyst B (Qwen) Rebuttal", source="con_b_rebuttal",
                              status_fn=status_fn, thinking_fn=thinking_fn),
     )
 
     return {
-        "bull_a": r_bull_a,
-        "bull_b": r_bull_b,
-        "bear_a": r_bear_a,
-        "bear_b": r_bear_b,
+        "pro_a": r_pro_a,
+        "pro_b": r_pro_b,
+        "con_a": r_con_a,
+        "con_b": r_con_b,
     }
 
 
@@ -593,20 +890,23 @@ async def _run_rebuttal_round(
 # ---------------------------------------------------------------------------
 
 async def _run_judge(
-    openings: dict, rebuttals: dict, data_pack: str, stock_name: str,
+    hypothesis: dict, openings: dict, rebuttals: dict, data_pack: str,
     thinking_fn=None,
 ) -> str:
     """Shuffle all 8 arguments anonymously and have MiniMax judge."""
+    h = hypothesis.get("hypothesis", "")
+    verdict_options = hypothesis.get("verdict_options", ["支持H₀", "反对H₀", "证据不足"])
+
     # Build labeled arguments with random order
     arguments = [
-        ("看多开场", openings["bull_a"]),
-        ("看多开场", openings["bull_b"]),
-        ("看空开场", openings["bear_a"]),
-        ("看空开场", openings["bear_b"]),
-        ("看多反驳", rebuttals["bull_a"]),
-        ("看多反驳", rebuttals["bull_b"]),
-        ("看空反驳", rebuttals["bear_a"]),
-        ("看空反驳", rebuttals["bear_b"]),
+        ("正方开场 (支持H₀)", openings["pro_a"]),
+        ("正方开场 (支持H₀)", openings["pro_b"]),
+        ("反方开场 (反对H₀)", openings["con_a"]),
+        ("反方开场 (反对H₀)", openings["con_b"]),
+        ("正方反驳", rebuttals["pro_a"]),
+        ("正方反驳", rebuttals["pro_b"]),
+        ("反方反驳", rebuttals["con_a"]),
+        ("反方反驳", rebuttals["con_b"]),
     ]
     random.shuffle(arguments)
 
@@ -620,6 +920,10 @@ async def _run_judge(
     data_summary = data_pack[:3000] if len(data_pack) > 3000 else data_pack
 
     judge_prompt = _JUDGE.format(
+        hypothesis=h,
+        verdict_option_1=verdict_options[0] if len(verdict_options) > 0 else "支持H₀",
+        verdict_option_2=verdict_options[1] if len(verdict_options) > 1 else "反对H₀",
+        verdict_option_3=verdict_options[2] if len(verdict_options) > 2 else "证据不足",
         data_summary=data_summary,
         all_arguments=all_arguments,
     )
@@ -627,7 +931,7 @@ async def _run_judge(
     system = (
         "你是一位量化投资委员会主席。所有分析均匿名呈现。"
         "仅根据数据准确性、数据完整性和数字一致性进行判断。"
-        "忽略任何修辞手法或情绪化表述。不要默认选择HOLD。"
+        "忽略任何修辞手法或情绪化表述。不要默认选择第三个选项。"
     )
 
     verdict_text = await _llm_call(minimax_client, MINIMAX_MODEL, system, judge_prompt,
@@ -639,33 +943,36 @@ async def _run_judge(
 # Phase 5: Executive Summary
 # ---------------------------------------------------------------------------
 
-_SUMMARY = """You are a senior research editor. Below is the complete output of a multi-analyst debate on {stock_name} ({stock_code}), including the committee verdict.
+_SUMMARY = """You are a senior research editor. Below is the complete output of a multi-analyst debate on the following hypothesis, including the committee verdict.
+
+**H₀: {hypothesis}**
+**Report: {report_title}**
 
 Your task: produce an institutional-quality executive summary that a portfolio manager can read in 2 minutes.
 
-Structure EXACTLY as follows (in Chinese):
+Structure EXACTLY as follows (in the same language as the debate content):
 
 ## 执行摘要
 
-一句话结论 (BUY/SELL/HOLD + 置信度 + 核心理由)。
+一句话结论 (判定结果 + 置信度 + 核心理由)。
 
-## 关键财务指标
+## 关键数据指标
 
 | 指标 | 数值 | 同比/趋势 |
 |------|------|-----------|
-(Fill 8-12 rows from the data: PE, PB, 股息率, 营收, 净利润, ROE, 资产负债率, OCF/净利润, 主力资金净流入, 净资产, etc. Use exact numbers.)
+(Fill 8-12 rows from the data with the most relevant metrics. Use exact numbers.)
 
-## 多方核心论据 (数据支撑)
+## 正方核心论据 (支持H₀)
 
 3-5 bullet points. Each bullet: one sentence with specific number.
 
-## 空方核心论据 (数据支撑)
+## 反方核心论据 (反对H₀)
 
 3-5 bullet points. Each bullet: one sentence with specific number.
 
 ## 争议焦点与数据分歧
 
-List 2-3 specific data points where bull and bear analysts disagreed, noting both interpretations.
+List 2-3 specific data points where the two sides disagreed, noting both interpretations.
 
 ## 风险因素
 
@@ -686,36 +993,36 @@ Rules:
 === JUDGE VERDICT ===
 {verdict}
 
-=== BULL OPENING (Analyst A) ===
-{bull_a}
+=== PRO-H₀ OPENING (Analyst A) ===
+{pro_a}
 
-=== BULL OPENING (Analyst B) ===
-{bull_b}
+=== PRO-H₀ OPENING (Analyst B) ===
+{pro_b}
 
-=== BEAR OPENING (Analyst A) ===
-{bear_a}
+=== CON-H₀ OPENING (Analyst A) ===
+{con_a}
 
-=== BEAR OPENING (Analyst B) ===
-{bear_b}
+=== CON-H₀ OPENING (Analyst B) ===
+{con_b}
 
-=== BULL REBUTTAL (Analyst A) ===
-{rebuttal_bull_a}
+=== PRO-H₀ REBUTTAL (Analyst A) ===
+{rebuttal_pro_a}
 
-=== BULL REBUTTAL (Analyst B) ===
-{rebuttal_bull_b}
+=== PRO-H₀ REBUTTAL (Analyst B) ===
+{rebuttal_pro_b}
 
-=== BEAR REBUTTAL (Analyst A) ===
-{rebuttal_bear_a}
+=== CON-H₀ REBUTTAL (Analyst A) ===
+{rebuttal_con_a}
 
-=== BEAR REBUTTAL (Analyst B) ===
-{rebuttal_bear_b}
+=== CON-H₀ REBUTTAL (Analyst B) ===
+{rebuttal_con_b}
 
 === KEY MARKET DATA ===
 {data_summary}"""
 
 
 async def _run_summary(
-    stock_code: str, stock_name: str, data_pack: str,
+    hypothesis: dict, data_pack: str,
     openings: dict, rebuttals: dict, verdict: str,
     thinking_fn=None,
 ) -> str:
@@ -723,12 +1030,13 @@ async def _run_summary(
     data_summary = data_pack[:4000] if len(data_pack) > 4000 else data_pack
 
     prompt = _SUMMARY.format(
-        stock_name=stock_name, stock_code=stock_code,
+        hypothesis=hypothesis.get("hypothesis", ""),
+        report_title=hypothesis.get("report_title", ""),
         verdict=verdict,
-        bull_a=openings["bull_a"], bull_b=openings["bull_b"],
-        bear_a=openings["bear_a"], bear_b=openings["bear_b"],
-        rebuttal_bull_a=rebuttals["bull_a"], rebuttal_bull_b=rebuttals["bull_b"],
-        rebuttal_bear_a=rebuttals["bear_a"], rebuttal_bear_b=rebuttals["bear_b"],
+        pro_a=openings["pro_a"], pro_b=openings["pro_b"],
+        con_a=openings["con_a"], con_b=openings["con_b"],
+        rebuttal_pro_a=rebuttals["pro_a"], rebuttal_pro_b=rebuttals["pro_b"],
+        rebuttal_con_a=rebuttals["con_a"], rebuttal_con_b=rebuttals["con_b"],
         data_summary=data_summary,
     )
 
@@ -754,22 +1062,26 @@ os.makedirs(_OUTPUT_DIR, exist_ok=True)
 
 
 def _build_report_markdown(
-    stock_code: str, stock_name: str,
+    hypothesis: dict,
     openings: dict, rebuttals: dict, verdict: str,
     summary: str,
 ) -> str:
     """Build an institutional-quality markdown report."""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    title = hypothesis.get("report_title", "投资分析报告")
+    h = hypothesis.get("hypothesis", "")
+
     lines = [
-        f"# {stock_name} ({stock_code}) 投资分析报告",
+        f"# {title}",
         f"",
         f"**日期:** {ts}  ",
+        f"**假设 (H₀):** {h}  ",
         f"**分析方法:** 多模型对抗辩论 (MiniMax + Qwen, 4位分析师 + 独立评审)  ",
         f"**免责声明:** 本报告由AI生成，仅供参考，不构成投资建议。",
         f"",
         f"---",
         f"",
-        # Part 1: Executive Summary (the new Phase 5 output)
+        # Part 1: Executive Summary
         summary,
         f"",
         f"---",
@@ -784,43 +1096,43 @@ def _build_report_markdown(
         # Part 3: Full Analyst Arguments
         f"# 附录: 完整分析师论述",
         f"",
-        f"## A.1 看多分析 — 分析师A",
+        f"## A.1 正方分析 (支持H₀) — 分析师A",
         f"",
-        openings["bull_a"],
+        openings["pro_a"],
         f"",
-        f"## A.2 看多分析 — 分析师B",
+        f"## A.2 正方分析 (支持H₀) — 分析师B",
         f"",
-        openings["bull_b"],
+        openings["pro_b"],
         f"",
-        f"## A.3 看空分析 — 分析师A",
+        f"## A.3 反方分析 (反对H₀) — 分析师A",
         f"",
-        openings["bear_a"],
+        openings["con_a"],
         f"",
-        f"## A.4 看空分析 — 分析师B",
+        f"## A.4 反方分析 (反对H₀) — 分析师B",
         f"",
-        openings["bear_b"],
+        openings["con_b"],
         f"",
-        f"## A.5 交叉质证 — 看多分析师A",
+        f"## A.5 交叉质证 — 正方分析师A",
         f"",
-        rebuttals["bull_a"],
+        rebuttals["pro_a"],
         f"",
-        f"## A.6 交叉质证 — 看多分析师B",
+        f"## A.6 交叉质证 — 正方分析师B",
         f"",
-        rebuttals["bull_b"],
+        rebuttals["pro_b"],
         f"",
-        f"## A.7 交叉质证 — 看空分析师A",
+        f"## A.7 交叉质证 — 反方分析师A",
         f"",
-        rebuttals["bear_a"],
+        rebuttals["con_a"],
         f"",
-        f"## A.8 交叉质证 — 看空分析师B",
+        f"## A.8 交叉质证 — 反方分析师B",
         f"",
-        rebuttals["bear_b"],
+        rebuttals["con_b"],
     ]
     return "\n".join(lines)
 
 
 async def _generate_report(
-    stock_code: str, stock_name: str,
+    hypothesis: dict,
     openings: dict, rebuttals: dict, verdict: str,
     summary: str,
 ) -> list[str]:
@@ -828,11 +1140,19 @@ async def _generate_report(
     from tools.output import generate_pdf
 
     md_content = _build_report_markdown(
-        stock_code, stock_name, openings, rebuttals, verdict, summary,
+        hypothesis, openings, rebuttals, verdict, summary,
     )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = f"{stock_name}_{ts}"
+    # Build filename from entity names or hypothesis
+    entities = hypothesis.get("entities", [])
+    if entities:
+        name_parts = [e.get("name", "") for e in entities if e.get("name")]
+        base_name = "_vs_".join(name_parts) + f"_{ts}" if name_parts else f"report_{ts}"
+    else:
+        # Sanitize hypothesis text for filename
+        safe = re.sub(r"[^\w\u4e00-\u9fff]+", "_", hypothesis.get("hypothesis", "report"))[:30]
+        base_name = f"{safe}_{ts}"
 
     # Save markdown
     md_path = os.path.join(_OUTPUT_DIR, f"{base_name}.md")
@@ -840,7 +1160,7 @@ async def _generate_report(
         f.write(md_content)
 
     # Generate PDF using existing generate_pdf tool
-    title = f"{stock_name} ({stock_code}) 投资分析报告"
+    title = hypothesis.get("report_title", "投资分析报告")
     try:
         pdf_result = await generate_pdf(title=title, content=md_content)
         pdf_orig = pdf_result.get("file", "")
@@ -865,8 +1185,12 @@ async def _generate_report(
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
-async def analyze_trade_opportunity(stock_code: str, context: str = "") -> dict:
-    """Run multi-LLM debate analysis for a stock. Returns structured report."""
+async def run_hypothesis_debate(user_question: str, context: str = "") -> dict:
+    """Run hypothesis-driven multi-LLM debate for any investment question.
+
+    This is the main entry point. Forms a hypothesis from the question,
+    collects data per the plan, and runs the full debate pipeline.
+    """
     # Get callbacks from contextvars (set by agent.py)
     from agent import status_callback, thinking_callback
     _emit = status_callback.get(None)
@@ -886,39 +1210,46 @@ async def analyze_trade_opportunity(stock_code: str, context: str = "") -> dict:
             except Exception:
                 pass
 
-    logger.info(f"[TradeAnalyzer] Starting debate analysis for {stock_code}")
+    logger.info(f"[TradeAnalyzer] Starting hypothesis debate for: {user_question}")
 
-    # Phase 1: Data collection
-    await _status("Collecting market data...")
-    logger.info(f"[TradeAnalyzer] Phase 1: Collecting data for {stock_code}")
-    data_pack, stock_name = await _collect_data(stock_code, context)
-    logger.info(f"[TradeAnalyzer] Data collected: {stock_name} ({len(data_pack)} chars)")
+    # Phase 0: Form hypothesis
+    await _status("Forming hypothesis from question...")
+    logger.info("[TradeAnalyzer] Phase 0: Forming hypothesis")
+    hypothesis = await _form_hypothesis(user_question, context, thinking_fn=_thinking)
+    logger.info(f"[TradeAnalyzer] Hypothesis: {hypothesis.get('hypothesis', '')}")
+
+    # Phase 1: Data collection per plan
+    await _status("Collecting data per hypothesis plan...")
+    logger.info(f"[TradeAnalyzer] Phase 1: Collecting data ({len(hypothesis.get('data_plan', []))} tools)")
+    data_pack = await _collect_data_from_plan(
+        hypothesis.get("data_plan", []), context, hypothesis.get("entities"),
+    )
+    logger.info(f"[TradeAnalyzer] Data collected: {len(data_pack)} chars")
 
     # Phase 2: Opening arguments
     await _status("MiniMax + Qwen · Opening arguments (4 analysts)...")
-    logger.info(f"[TradeAnalyzer] Phase 2: Opening arguments (4 parallel LLM calls)")
-    openings = await _run_opening_round(stock_code, stock_name, data_pack,
+    logger.info("[TradeAnalyzer] Phase 2: Opening arguments (4 parallel LLM calls)")
+    openings = await _run_opening_round(hypothesis, data_pack,
                                          status_fn=_status, thinking_fn=_thinking)
     logger.info("[TradeAnalyzer] Opening arguments complete")
 
     # Phase 3: Rebuttals
     await _status("MiniMax + Qwen · Rebuttals (4 analysts)...")
-    logger.info(f"[TradeAnalyzer] Phase 3: Rebuttals (4 parallel LLM calls)")
-    rebuttals = await _run_rebuttal_round(stock_code, stock_name, data_pack, openings,
+    logger.info("[TradeAnalyzer] Phase 3: Rebuttals (4 parallel LLM calls)")
+    rebuttals = await _run_rebuttal_round(hypothesis, data_pack, openings,
                                            status_fn=_status, thinking_fn=_thinking)
     logger.info("[TradeAnalyzer] Rebuttals complete")
 
     # Phase 4: Judge
     await _status("MiniMax · Judge rendering verdict...")
-    logger.info(f"[TradeAnalyzer] Phase 4: Judge (1 LLM call)")
-    verdict = await _run_judge(openings, rebuttals, data_pack, stock_name, thinking_fn=_thinking)
+    logger.info("[TradeAnalyzer] Phase 4: Judge (1 LLM call)")
+    verdict = await _run_judge(hypothesis, openings, rebuttals, data_pack, thinking_fn=_thinking)
     logger.info("[TradeAnalyzer] Judge verdict rendered")
 
     # Phase 5: Executive Summary
     await _status("MiniMax · Synthesizing executive summary...")
     logger.info("[TradeAnalyzer] Phase 5: Executive summary (1 LLM call)")
-    summary = await _run_summary(stock_code, stock_name, data_pack, openings, rebuttals, verdict, thinking_fn=_thinking)
-    # Graceful fallback if summary generation failed
+    summary = await _run_summary(hypothesis, data_pack, openings, rebuttals, verdict, thinking_fn=_thinking)
     if summary.startswith("(LLM") or summary.startswith("("):
         logger.warning(f"[TradeAnalyzer] Summary failed: {summary}, using verdict as fallback")
         summary = verdict
@@ -926,23 +1257,35 @@ async def analyze_trade_opportunity(stock_code: str, context: str = "") -> dict:
 
     # Phase 6: Generate MD + PDF report
     await _status("Generating report...")
-    files = await _generate_report(stock_code, stock_name, openings, rebuttals, verdict, summary)
+    files = await _generate_report(hypothesis, openings, rebuttals, verdict, summary)
     logger.info(f"[TradeAnalyzer] Report generated: {files}")
 
     return {
-        "stock_code": stock_code,
-        "stock_name": stock_name,
+        "hypothesis": hypothesis.get("hypothesis", ""),
+        "question_type": hypothesis.get("question_type", ""),
         "verdict": verdict,
         "summary": summary,
         "files": files,
+        "report_title": hypothesis.get("report_title", ""),
         "debate_log": {
-            "opening_bull_a": openings["bull_a"],
-            "opening_bull_b": openings["bull_b"],
-            "opening_bear_a": openings["bear_a"],
-            "opening_bear_b": openings["bear_b"],
-            "rebuttal_bull_a": rebuttals["bull_a"],
-            "rebuttal_bull_b": rebuttals["bull_b"],
-            "rebuttal_bear_a": rebuttals["bear_a"],
-            "rebuttal_bear_b": rebuttals["bear_b"],
+            "opening_pro_a": openings["pro_a"],
+            "opening_pro_b": openings["pro_b"],
+            "opening_con_a": openings["con_a"],
+            "opening_con_b": openings["con_b"],
+            "rebuttal_pro_a": rebuttals["pro_a"],
+            "rebuttal_pro_b": rebuttals["pro_b"],
+            "rebuttal_con_a": rebuttals["con_a"],
+            "rebuttal_con_b": rebuttals["con_b"],
         },
     }
+
+
+async def analyze_trade_opportunity(
+    stock_code: str = "", question: str = "", context: str = "",
+) -> dict:
+    """Backward-compatible wrapper. Accepts stock_code or question."""
+    if question:
+        return await run_hypothesis_debate(question, context)
+    if stock_code:
+        return await run_hypothesis_debate(f"{stock_code} 值得投资吗?", context)
+    return {"error": "Either stock_code or question must be provided"}

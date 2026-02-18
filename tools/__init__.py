@@ -30,7 +30,7 @@ from tools.cn_eastmoney import (
     FETCH_STOCK_FINANCIALS_SCHEMA, FETCH_TOP_SHAREHOLDERS_SCHEMA,
     FETCH_DRAGON_TIGER_SCHEMA, FETCH_DIVIDEND_HISTORY_SCHEMA,
 )
-from tools.trade_analyzer import analyze_trade_opportunity, ANALYZE_TRADE_SCHEMA
+from tools.trade_analyzer import analyze_trade_opportunity, run_hypothesis_debate, ANALYZE_TRADE_SCHEMA
 
 TOOL_SCHEMAS = [
     LOOKUP_DATA_SOURCES_SCHEMA,

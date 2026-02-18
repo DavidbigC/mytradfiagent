@@ -265,10 +265,7 @@ async def _run_debate_inner(
             except Exception:
                 pass
 
-    # Step 1: Extract stock code from conversation
-    await _emit("Identifying stock code...")
-
-    # Build context from ALL message types (user messages contain stock names!)
+    # Build conversation context for the hypothesis engine
     context_parts = []
     for m in messages[-20:]:
         role = m.get("role", "")
@@ -279,46 +276,14 @@ async def _run_debate_inner(
     if len(conversation_context) > 8000:
         conversation_context = conversation_context[:8000]
 
-    # First try: regex extraction from user message + conversation (no LLM needed)
-    stock_code = ""
-    all_text = user_message + "\n" + conversation_context
-    code_match = re.search(r"(?<!\d)\d{6}(?!\d)", all_text)
-    if code_match:
-        stock_code = code_match.group(0)
-        logger.info(f"[Debate] Extracted stock code via regex: {stock_code}")
+    await _emit("Starting hypothesis-driven debate...")
 
-    # Fallback: LLM extraction if regex didn't find one
-    if not stock_code:
-        try:
-            resp = await client.chat.completions.create(
-                model=MINIMAX_MODEL,
-                messages=[
-                    {"role": "system", "content": "Extract the 6-digit Chinese A-share stock code from the conversation. Reply with ONLY the code or NONE."},
-                    {"role": "user", "content": f"User message: {user_message}\n\nConversation:\n{conversation_context[:3000]}"},
-                ],
-                temperature=0,
-                max_tokens=20,
-            )
-            raw = (resp.choices[0].message.content or "").strip()
-            code_match = re.search(r"\d{6}", raw)
-            stock_code = code_match.group(0) if code_match else ""
-        except Exception as e:
-            logger.error(f"Stock code extraction failed: {e}")
-            stock_code = ""
-
-    if not stock_code:
-        text = "Could not identify a stock code from the conversation. Please mention a specific stock (e.g. 600036 招商银行) and try again."
-        await save_message(conv_id, "assistant", text)
-        return {"text": text, "files": []}
-
-    await _emit(f"Starting debate analysis for {stock_code}...")
-
-    # Step 2: Run trade analyzer directly
+    # Pass user question directly — hypothesis engine handles everything
     status_token = status_callback.set(_emit)
     thinking_token = thinking_callback.set(_emit_thinking)
     try:
-        from tools.trade_analyzer import analyze_trade_opportunity
-        result = await analyze_trade_opportunity(stock_code, context=conversation_context)
+        from tools.trade_analyzer import run_hypothesis_debate
+        result = await run_hypothesis_debate(user_message, context=conversation_context)
     finally:
         status_callback.reset(status_token)
         thinking_callback.reset(thinking_token)
@@ -326,10 +291,11 @@ async def _run_debate_inner(
     # Build response text
     verdict = result.get("verdict", "")
     summary = result.get("summary", "")
-    stock_name = result.get("stock_name", stock_code)
+    hypothesis = result.get("hypothesis", user_message)
+    report_title = result.get("report_title", hypothesis)
     files = result.get("files", [])
 
-    text = f"## {stock_name} ({stock_code}) Debate Analysis\n\n{summary}\n\n---\n\n{verdict}"
+    text = f"## {report_title}\n\n**H₀: {hypothesis}**\n\n{summary}\n\n---\n\n{verdict}"
 
     await save_message(conv_id, "assistant", text)
     return {"text": text, "files": files}

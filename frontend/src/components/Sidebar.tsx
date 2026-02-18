@@ -14,11 +14,12 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  onDebate: () => void;
   open: boolean;
   onClose: () => void;
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, open, onClose }: Props) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose }: Props) {
   const { user, logout } = useAuth();
   const [showAdmin, setShowAdmin] = useState(false);
   const isAdmin = user?.username === "davidc";
@@ -29,6 +30,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="sidebar-header">
           <button className="new-chat-btn" onClick={onNew}>+ New Chat</button>
+          <button className="debate-btn" onClick={onDebate}>Hypothesis Debate</button>
         </div>
 
         <div className="conversation-list">

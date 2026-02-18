@@ -157,10 +157,13 @@ _BUNDLED_FONT = os.path.join(_FONTS_DIR, "NotoSansSC-Regular.ttf")
 _PDF_FONT_PATHS = [
     # Bundled / downloaded font (highest priority)
     _BUNDLED_FONT,
-    # macOS
+    # macOS — prefer Songti (宋体, serif) for readability, then PingFang, then Arial Unicode
+    "/System/Library/Fonts/Supplemental/Songti.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
     "/Library/Fonts/Arial Unicode.ttf",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     # Linux — common packages
+    "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf",
     "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
@@ -301,12 +304,31 @@ def _render_table(pdf: FPDF, lines: list[str], font_family: str):
     pdf.ln(4)
 
 
+class _ReportPDF(FPDF):
+    """FPDF subclass with automatic Chinese footer on every page."""
+
+    _font_family: str = "Helvetica"
+
+    def footer(self):
+        self.set_y(-25)
+        self.set_draw_color(*_CLR_RULE)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.ln(2)
+        self.set_font(self._font_family, "", 7)
+        self.set_text_color(*_CLR_MUTED)
+        self.cell(0, 4, "本报告由AI生成，仅供参考，不构成投资建议。", align="L")
+        self.ln(4)
+        self.cell(0, 4, f"{self.page_no()} / {{nb}}", align="C")
+
+
 async def generate_pdf(title: str, content: str) -> dict:
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf = _ReportPDF()
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=30)
     pdf.add_page()
 
     font_family, bold_family = _setup_pdf_fonts(pdf)
+    pdf._font_family = font_family
 
     # --- Header band ---
     pdf.set_fill_color(*_CLR_PRIMARY)
@@ -323,11 +345,15 @@ async def generate_pdf(title: str, content: str) -> dict:
     pdf.multi_cell(0, 12, title, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_y(band_h + 2)
 
-    # Subtitle line (date)
+    # Subtitle line (date + disclaimer)
     pdf.set_text_color(*_CLR_MUTED)
     pdf.set_font(font_family, "", 9)
     pdf.cell(0, 5, datetime.now().strftime("%Y-%m-%d"), align="C")
     pdf.ln(10)
+
+    # Body text constants
+    _BODY_SIZE = 10.5
+    _BODY_LH = 6.5  # line height — generous for CJK readability
 
     # Thin accent rule
     pdf.set_draw_color(*_CLR_ACCENT)
@@ -337,6 +363,12 @@ async def generate_pdf(title: str, content: str) -> dict:
     pdf.ln(6)
 
     # --- Body ---
+    # Sanitize characters that may be missing from CJK fonts
+    content = content.replace("\u2080", "0")   # ₀ → 0
+    content = content.replace("\u2081", "1")   # ₁ → 1
+    content = content.replace("\u2082", "2")   # ₂ → 2
+    content = content.replace("\u2083", "3")   # ₃ → 3
+
     pdf.set_text_color(*_CLR_TEXT)
     all_lines = content.split("\n")
     i = 0
@@ -356,78 +388,65 @@ async def generate_pdf(title: str, content: str) -> dict:
         display = re.sub(r"\*\*(.+?)\*\*", r"\1", stripped)
 
         if stripped.startswith("### "):
-            pdf.ln(3)
+            pdf.ln(4)
             pdf.set_text_color(*_CLR_ACCENT)
-            pdf.set_font(font_family, "B", 11)
-            _mc(pdf, 6, display[4:])
+            pdf.set_font(font_family, "B", 12)
+            _mc(pdf, 7, display[4:])
             pdf.set_text_color(*_CLR_TEXT)
-            pdf.set_font(font_family, "", 10)
+            pdf.set_font(font_family, "", _BODY_SIZE)
         elif stripped.startswith("## "):
-            pdf.ln(5)
+            pdf.ln(6)
             pdf.set_text_color(*_CLR_PRIMARY)
-            pdf.set_font(font_family, "B", 13)
-            _mc(pdf, 7, display[3:])
+            pdf.set_font(font_family, "B", 14)
+            _mc(pdf, 8, display[3:])
             # Thin rule under section heading
             pdf.set_draw_color(*_CLR_RULE)
             pdf.line(pdf.l_margin, pdf.get_y() + 1, pdf.w - pdf.r_margin, pdf.get_y() + 1)
-            pdf.ln(3)
+            pdf.ln(4)
             pdf.set_text_color(*_CLR_TEXT)
-            pdf.set_font(font_family, "", 10)
+            pdf.set_font(font_family, "", _BODY_SIZE)
         elif stripped.startswith("# "):
-            pdf.ln(6)
+            pdf.ln(8)
             pdf.set_text_color(*_CLR_PRIMARY)
-            pdf.set_font(font_family, "B", 15)
-            _mc(pdf, 9, display[2:])
+            pdf.set_font(font_family, "B", 16)
+            _mc(pdf, 10, display[2:])
             pdf.set_draw_color(*_CLR_ACCENT)
             pdf.set_line_width(0.5)
             pdf.line(pdf.l_margin, pdf.get_y() + 1, pdf.w - pdf.r_margin, pdf.get_y() + 1)
             pdf.set_line_width(0.2)
-            pdf.ln(4)
+            pdf.ln(5)
             pdf.set_text_color(*_CLR_TEXT)
-            pdf.set_font(font_family, "", 10)
+            pdf.set_font(font_family, "", _BODY_SIZE)
         elif stripped == "---":
             # Horizontal rule
-            pdf.ln(3)
+            pdf.ln(4)
             pdf.set_draw_color(*_CLR_RULE)
             pdf.set_line_width(0.4)
             pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
             pdf.set_line_width(0.2)
-            pdf.ln(4)
+            pdf.ln(5)
         elif stripped.startswith(("- ", "* ")):
             bullet = display[2:]
-            pdf.set_font(font_family, "", 10)
-            pdf.cell(6, 5.5, chr(8226))  # bullet char
-            pdf.multi_cell(w=0, h=5.5, text=bullet, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font(font_family, "", _BODY_SIZE)
+            pdf.cell(6, _BODY_LH, chr(0x25CF))  # ● filled circle (CJK-safe bullet)
+            pdf.multi_cell(w=0, h=_BODY_LH, text=bullet, new_x="LMARGIN", new_y="NEXT")
         elif re.match(r"^\d+\.\s", stripped):
             # Numbered list
             num_match = re.match(r"^(\d+\.)\s(.*)", display)
             if num_match:
-                pdf.set_font(font_family, "B", 10)
-                pdf.cell(8, 5.5, num_match.group(1))
-                pdf.set_font(font_family, "", 10)
-                pdf.multi_cell(w=0, h=5.5, text=num_match.group(2), new_x="LMARGIN", new_y="NEXT")
+                pdf.set_font(font_family, "B", _BODY_SIZE)
+                pdf.cell(8, _BODY_LH, num_match.group(1))
+                pdf.set_font(font_family, "", _BODY_SIZE)
+                pdf.multi_cell(w=0, h=_BODY_LH, text=num_match.group(2), new_x="LMARGIN", new_y="NEXT")
             else:
-                pdf.set_font(font_family, "", 10)
-                _mc(pdf, 5.5, display)
+                pdf.set_font(font_family, "", _BODY_SIZE)
+                _mc(pdf, _BODY_LH, display)
         elif stripped:
-            pdf.set_font(font_family, "", 10)
-            _mc(pdf, 5.5, display)
+            pdf.set_font(font_family, "", _BODY_SIZE)
+            _mc(pdf, _BODY_LH, display)
         else:
             pdf.ln(3)
         i += 1
-
-    # --- Footer on each page ---
-    total = pdf.page
-    for pg in range(1, total + 1):
-        pdf.page = pg
-        pdf.set_y(-15)
-        pdf.set_draw_color(*_CLR_RULE)
-        pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-        pdf.set_font(font_family, "", 7)
-        pdf.set_text_color(*_CLR_MUTED)
-        pdf.cell(0, 4, "AI-generated report. For reference only. Not investment advice.", align="L")
-        pdf.ln(4)
-        pdf.cell(0, 4, f"Page {pg} / {total}", align="C")
 
     filename = f"report_{uuid.uuid4().hex[:8]}.pdf"
     filepath = os.path.join(OUTPUT_DIR, filename)

@@ -1,5 +1,53 @@
 # Changes
 
+## 2026-02-18 — Separate debate mode from regular chat
+
+**What:** Moved debate functionality out of the chat input area into a dedicated sidebar button with a modal dialog. Debate now creates a new conversation automatically.
+
+**Files:**
+- `frontend/src/components/ChatView.tsx` — modified: removed Debate button from input area, added `pendingDebate`/`onDebateStarted` props to auto-trigger debate from parent
+- `frontend/src/pages/ChatLayout.tsx` — modified: added debate modal state, modal overlay with textarea, handles creating new conversation and passing pending debate to ChatView
+- `frontend/src/components/Sidebar.tsx` — modified: added `onDebate` prop, added "Hypothesis Debate" button in sidebar header
+- `frontend/src/styles/index.css` — modified: removed old `.input-area .debate-btn` styles, added sidebar debate button styles and debate modal overlay/dialog styles
+
+**Details:**
+- Debate button now lives in the sidebar header below "+ New Chat"
+- Clicking it opens a centered modal with a textarea for the investment question
+- Submitting creates a new conversation, sets it active, and auto-starts the debate via `pendingDebate` prop
+- Enter submits, Shift+Enter for newline, Escape closes modal
+- Modal auto-focuses the textarea on open
+
+## 2026-02-18 — Fix PDF footer overlap, Chinese disclaimer, Songti font
+
+**What:** Fixed PDF report generation: footer no longer overlaps body content, English disclaimer replaced with Chinese, font changed to Songti (宋体) for better readability, body text spacing increased.
+
+**Files:**
+- `tools/output.py` — modified: added `_ReportPDF` FPDF subclass with proper `footer()` method (replaces buggy post-hoc page iteration); prioritized Songti.ttc in font search order; replaced English disclaimer with Chinese; increased body text to 10.5pt with 6.5 line height; added Unicode subscript sanitization (₀→0); changed bullet char from U+2022 to U+25CF (CJK-safe); increased auto page break margin to 30mm
+
+**Details:**
+- Root cause of overlap: old code looped through pages after content was done and wrote footer text, which collided with content on page boundaries
+- Fix: `_ReportPDF.footer()` is called automatically by fpdf2 during page breaks, ensuring correct positioning
+- Font priority: Songti.ttc (macOS) → PingFang.ttc → Noto Serif CJK (Linux) → Noto Sans CJK → fallback
+
+## 2026-02-18 — Hypothesis-driven debate engine
+
+**What:** Generalized the debate engine from hardcoded "is stock X worth investing in?" to handle any investment question (comparisons, sector analysis, general market questions) by forming a testable hypothesis (H₀) from the user's question, then having pro/con sides debate it.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: added `_form_hypothesis()` (Phase 0 LLM call to parse question into hypothesis + data plan), `_collect_data_from_plan()` (dynamic tool execution from plan), `run_hypothesis_debate()` (new main entry point); replaced `_BULL_OPENING`/`_BEAR_OPENING` with `_PRO_OPENING`/`_CON_OPENING`; generalized `_REBUTTAL`, `_JUDGE`, `_SUMMARY` prompts to use hypothesis framing; added dimension templates per question type; updated all phase functions to accept hypothesis dict; made `analyze_trade_opportunity()` a backward-compatible wrapper; updated report generation with hypothesis-aware titles and labels
+- `agent.py` — modified: simplified `_run_debate_inner()` to pass user question directly to `run_hypothesis_debate()` (removed stock code extraction logic)
+- `tools/__init__.py` — modified: added `run_hypothesis_debate` export
+- `frontend/src/components/ChatView.tsx` — modified: updated default debate message to "Analyze the question discussed above"
+- `changes.md` — modified: appended this entry
+
+**Details:**
+- Phase 0 forms hypothesis via LLM with 4 worked examples (single_stock, comparison, sector, general), full tool catalog, max 20 tool calls
+- Data collection now executes arbitrary tool plans in parallel instead of hardcoded 7 tools
+- Prompts use `{hypothesis}` and `{dimensions_text}` (per question type) instead of stock-specific framing
+- Judge verdict options are dynamic from hypothesis (replaces hardcoded BUY/SELL/HOLD)
+- Report filenames generated from entity names (e.g. "招商银行_vs_工商银行_20260218_143000.md")
+- Backward compatible: `analyze_trade_opportunity(stock_code="600036")` still works, internally calls `run_hypothesis_debate("600036 值得投资吗?")`
+
 ## 2026-02-18 — Remove Gemini + fix billion/亿 unit conversion
 
 **What:** Removed Gemini dependency (expensive), DuckDuckGo is now the sole search backend. Fixed critical unit conversion confusion where agents treated "billion" as "亿" (should be 10亿). Added explicit conversion rules to all 5 debate prompts and 3 system messages.

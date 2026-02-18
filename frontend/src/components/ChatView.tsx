@@ -47,9 +47,11 @@ interface Message {
 interface Props {
   conversationId: string | null;
   onConversationCreated?: () => void;
+  pendingDebate?: string | null;
+  onDebateStarted?: () => void;
 }
 
-export default function ChatView({ conversationId, onConversationCreated }: Props) {
+export default function ChatView({ conversationId, onConversationCreated, pendingDebate, onDebateStarted }: Props) {
   const { token, logout } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -98,6 +100,14 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
+
+  // Auto-start debate when pendingDebate is set and conversation is ready
+  useEffect(() => {
+    if (pendingDebate && conversationId && token && !sending) {
+      handleSend("debate", pendingDebate);
+      onDebateStarted?.();
+    }
+  }, [pendingDebate, conversationId]);
 
   function handleSend(mode?: string, overrideMsg?: string) {
     const msg = overrideMsg || input.trim();
@@ -169,11 +179,6 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
         setSending(false);
       },
     }, mode);
-  }
-
-  function handleDebate() {
-    const msg = input.trim() || "Run debate analysis on the stock discussed above";
-    handleSend("debate", msg);
   }
 
   function handleStop() {
@@ -255,14 +260,9 @@ export default function ChatView({ conversationId, onConversationCreated }: Prop
             Stop
           </button>
         ) : (
-          <>
-            <button onClick={() => handleSend()} disabled={!input.trim()}>
-              Send
-            </button>
-            <button className="debate-btn" onClick={handleDebate}>
-              Debate
-            </button>
-          </>
+          <button onClick={() => handleSend()} disabled={!input.trim()}>
+            Send
+          </button>
         )}
       </div>
     </div>
