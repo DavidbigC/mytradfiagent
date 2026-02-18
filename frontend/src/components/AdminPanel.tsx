@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../store";
+import { useT } from "../i18n";
 import {
   apiCreateAccount,
   fetchTables,
@@ -18,6 +19,7 @@ interface TableInfo {
 
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const { token } = useAuth();
+  const { t } = useT();
   const [tab, setTab] = useState<Tab>("tables");
 
   return (
@@ -25,9 +27,9 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
       <div className="admin-panel-full" onClick={(e) => e.stopPropagation()}>
         <div className="admin-header">
           <div className="admin-tabs">
-            <button className={tab === "tables" ? "active" : ""} onClick={() => setTab("tables")}>Tables</button>
-            <button className={tab === "query" ? "active" : ""} onClick={() => setTab("query")}>SQL Query</button>
-            <button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>Create Account</button>
+            <button className={tab === "tables" ? "active" : ""} onClick={() => setTab("tables")}>{t("admin.tables")}</button>
+            <button className={tab === "query" ? "active" : ""} onClick={() => setTab("query")}>{t("admin.query")}</button>
+            <button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>{t("admin.createAccount")}</button>
           </div>
           <button className="admin-close" onClick={onClose}>&times;</button>
         </div>
@@ -42,6 +44,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
 }
 
 function TableBrowser({ token }: { token: string }) {
+  const { t } = useT();
   const [tables, setTables] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [info, setInfo] = useState<TableInfo | null>(null);
@@ -85,15 +88,15 @@ function TableBrowser({ token }: { token: string }) {
   return (
     <div className="table-browser">
       <div className="table-list">
-        {tables.map((t) => (
-          <button key={t} className={`table-item ${t === selected ? "active" : ""}`} onClick={() => selectTable(t)}>
-            {t}
-            {info && t === selected && <span className="row-count">{info.row_count}</span>}
+        {tables.map((tbl) => (
+          <button key={tbl} className={`table-item ${tbl === selected ? "active" : ""}`} onClick={() => selectTable(tbl)}>
+            {tbl}
+            {info && tbl === selected && <span className="row-count">{info.row_count}</span>}
           </button>
         ))}
       </div>
       <div className="table-data">
-        {!selected && <div className="table-placeholder">Select a table</div>}
+        {!selected && <div className="table-placeholder">{t("admin.selectTable")}</div>}
         {selected && info && (
           <>
             <div className="table-meta">
@@ -103,7 +106,7 @@ function TableBrowser({ token }: { token: string }) {
               ))}
             </div>
             {loading ? (
-              <div className="table-placeholder">Loading...</div>
+              <div className="table-placeholder">{t("admin.loading")}</div>
             ) : (
               <>
                 <div className="data-table-wrap">
@@ -119,14 +122,14 @@ function TableBrowser({ token }: { token: string }) {
                           ))}
                         </tr>
                       ))}
-                      {rows.length === 0 && <tr><td colSpan={columns.length} className="table-placeholder">No rows</td></tr>}
+                      {rows.length === 0 && <tr><td colSpan={columns.length} className="table-placeholder">{t("admin.noRows")}</td></tr>}
                     </tbody>
                   </table>
                 </div>
                 <div className="table-pagination">
-                  <button disabled={offset === 0} onClick={() => loadPage(Math.max(0, offset - limit))}>Prev</button>
+                  <button disabled={offset === 0} onClick={() => loadPage(Math.max(0, offset - limit))}>{t("admin.prev")}</button>
                   <span>Showing {offset + 1}–{offset + rows.length} of {info.row_count}</span>
-                  <button disabled={offset + limit >= info.row_count} onClick={() => loadPage(offset + limit)}>Next</button>
+                  <button disabled={offset + limit >= info.row_count} onClick={() => loadPage(offset + limit)}>{t("admin.next")}</button>
                 </div>
               </>
             )}
@@ -138,6 +141,7 @@ function TableBrowser({ token }: { token: string }) {
 }
 
 function QueryRunner({ token }: { token: string }) {
+  const { t } = useT();
   const [sql, setSql] = useState("");
   const [result, setResult] = useState<{ columns: string[]; rows: Record<string, any>[]; count: number } | null>(null);
   const [error, setError] = useState("");
@@ -168,8 +172,8 @@ function QueryRunner({ token }: { token: string }) {
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleRun(); } }}
       />
       <div className="query-actions">
-        <button onClick={handleRun} disabled={loading}>{loading ? "Running..." : "Run Query"}</button>
-        <span className="query-hint">Ctrl+Enter to run. Read-only (SELECT/WITH/EXPLAIN).</span>
+        <button onClick={handleRun} disabled={loading}>{loading ? t("admin.running") : t("admin.runQuery")}</button>
+        <span className="query-hint">{t("admin.queryHint")}</span>
       </div>
       {error && <div className="error-msg">{error}</div>}
       {result && (
@@ -198,6 +202,7 @@ function QueryRunner({ token }: { token: string }) {
 }
 
 function AccountCreator({ token }: { token: string }) {
+  const { t } = useT();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -226,12 +231,12 @@ function AccountCreator({ token }: { token: string }) {
   return (
     <div className="account-creator">
       <form onSubmit={handleCreate}>
-        <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-        <input type="text" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-        <input type="password" placeholder="Password (min 6 chars)" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <input type="text" placeholder={t("admin.username")} value={username} onChange={(e) => setUsername(e.target.value)} required />
+        <input type="text" placeholder={t("admin.displayName")} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        <input type="password" placeholder={t("admin.passwordHint")} value={password} onChange={(e) => setPassword(e.target.value)} required />
         {error && <div className="error-msg">{error}</div>}
         {message && <div className="success-msg">{message}</div>}
-        <button type="submit" disabled={loading}>{loading ? "..." : "Create Account"}</button>
+        <button type="submit" disabled={loading}>{loading ? "..." : t("admin.createAccount")}</button>
       </form>
     </div>
   );

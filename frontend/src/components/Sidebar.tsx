@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../store";
+import { useT } from "../i18n";
 import AdminPanel from "./AdminPanel";
 
 interface Conversation {
@@ -21,6 +22,7 @@ interface Props {
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose }: Props) {
   const { user, logout } = useAuth();
+  const { lang, setLang, t } = useT();
   const [showAdmin, setShowAdmin] = useState(false);
   const isAdmin = user?.username === "davidc";
 
@@ -29,8 +31,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       {open && <div className="sidebar-overlay" onClick={onClose} />}
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="sidebar-header">
-          <button className="new-chat-btn" onClick={onNew}>+ New Chat</button>
-          <button className="debate-btn" onClick={onDebate}>Hypothesis Debate</button>
+          <button className="new-chat-btn" onClick={onNew}>{t("sidebar.newChat")}</button>
+          <button className="debate-btn" onClick={onDebate}>{t("sidebar.debate")}</button>
         </div>
 
         <div className="conversation-list">
@@ -44,7 +46,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
               <button
                 className="conv-delete"
                 onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                title="Delete"
+                title={t("sidebar.delete")}
               >
                 &times;
               </button>
@@ -55,10 +57,13 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="sidebar-footer">
           <span className="user-name">{user?.display_name || user?.username}</span>
           <div className="sidebar-actions">
+            <button className="lang-toggle" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
+              {lang === "zh" ? "EN" : "中"}
+            </button>
             {isAdmin && (
-              <button className="admin-btn" onClick={() => setShowAdmin(true)}>Admin</button>
+              <button className="admin-btn" onClick={() => setShowAdmin(true)}>{t("sidebar.admin")}</button>
             )}
-            <button className="logout-btn" onClick={logout}>Logout</button>
+            <button className="logout-btn" onClick={logout}>{t("sidebar.logout")}</button>
           </div>
         </div>
       </aside>

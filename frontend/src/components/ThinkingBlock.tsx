@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useT } from "../i18n";
 
 interface Props {
   label: string;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function ThinkingBlock({ label, content, streaming = false }: Props) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(streaming);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +28,7 @@ export default function ThinkingBlock({ label, content, streaming = false }: Pro
     <div className={`thinking-stream${streaming ? " thinking-streaming" : ""}`}>
       <div className="thinking-header" onClick={() => setExpanded(!expanded)}>
         <span className="thinking-source">{label}</span>
-        <span className="thinking-expand-hint">{expanded ? "hide" : "show"}</span>
+        <span className="thinking-expand-hint">{expanded ? t("thinking.hide") : t("thinking.show")}</span>
       </div>
       {expanded && (
         <div className="thinking-text" ref={scrollRef}>

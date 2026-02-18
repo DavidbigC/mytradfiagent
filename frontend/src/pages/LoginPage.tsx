@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store";
 import { apiLogin } from "../api";
+import { useT } from "../i18n";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -11,6 +12,7 @@ export default function LoginPage() {
 
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { t } = useT();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,13 +32,13 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>Financial Research Agent</h1>
-        <p className="login-subtitle">AI-powered market analysis</p>
+        <h1>{t("app.title")}</h1>
+        <p className="login-subtitle">{t("app.subtitle")}</p>
 
         <form onSubmit={handleSubmit}>
           <input
             type="text"
-            placeholder="Username"
+            placeholder={t("login.username")}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
@@ -44,14 +46,14 @@ export default function LoginPage() {
           />
           <input
             type="password"
-            placeholder="Password"
+            placeholder={t("login.password")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
           {error && <div className="error-msg">{error}</div>}
           <button type="submit" disabled={loading}>
-            {loading ? "..." : "Sign In"}
+            {loading ? "..." : t("login.signIn")}
           </button>
         </form>
       </div>

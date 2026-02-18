@@ -1,3 +1,5 @@
+import { useT } from "../i18n";
+
 interface Ref {
   num: string;
   url: string;
@@ -8,12 +10,13 @@ interface Props {
 }
 
 export default function ReferenceCard({ references }: Props) {
+  const { t } = useT();
   const validRefs = references.filter((r) => r.url && r.url.startsWith("http"));
   if (!validRefs.length) return null;
 
   return (
     <div className="reference-card">
-      <div className="ref-header">References</div>
+      <div className="ref-header">{t("references.title")}</div>
       {validRefs.map((r) => (
         <div key={r.num} className="ref-item">
           <span className="ref-num">[{r.num}]</span>

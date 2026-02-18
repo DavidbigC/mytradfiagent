@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../store";
+import { useT } from "../i18n";
 import { sendMessage, fetchMessages } from "../api";
 import MessageBubble, { ThinkingData } from "./MessageBubble";
 import StatusIndicator from "./StatusIndicator";
@@ -53,6 +54,7 @@ interface Props {
 
 export default function ChatView({ conversationId, onConversationCreated, pendingDebate, onDebateStarted }: Props) {
   const { token, logout } = useAuth();
+  const { t } = useT();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -117,7 +119,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
     // Reset textarea height after clearing
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setSending(true);
-    setStatus(mode === "debate" ? "Starting debate..." : "Connecting...");
+    setStatus(mode === "debate" ? t("chat.debateStarting") : t("chat.connecting"));
     setThinkingBlocks([]);
     thinkingBlocksRef.current = [];
 
@@ -221,8 +223,8 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
       <div className="messages-container">
         {messages.length === 0 && !status && (
           <div className="empty-chat">
-            <h2>Financial Research Agent</h2>
-            <p>Ask about stocks, funds, bonds, or any financial topic.</p>
+            <h2>{t("chat.title")}</h2>
+            <p>{t("chat.subtitle")}</p>
           </div>
         )}
         {messages.map((m, i) => (
@@ -252,16 +254,16 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
           value={input}
           onChange={(e) => { setInput(e.target.value); autoResize(); }}
           onKeyDown={handleKeyDown}
-          placeholder="Ask a question... (Shift+Enter for new line)"
+          placeholder={t("chat.placeholder")}
           rows={1}
         />
         {sending ? (
           <button className="stop-btn" onClick={handleStop}>
-            Stop
+            {t("chat.stop")}
           </button>
         ) : (
           <button onClick={() => handleSend()} disabled={!input.trim()}>
-            Send
+            {t("chat.send")}
           </button>
         )}
       </div>

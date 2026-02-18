@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../store";
+import { useT } from "../i18n";
 import { fetchConversations, createConversation, deleteConversation } from "../api";
 import Sidebar from "../components/Sidebar";
 import ChatView from "../components/ChatView";
@@ -12,6 +13,7 @@ interface Conversation {
 
 export default function ChatLayout() {
   const { token, logout } = useAuth();
+  const { t } = useT();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -125,22 +127,22 @@ export default function ChatLayout() {
       {showDebateModal && (
         <div className="debate-modal-overlay" onClick={() => { setShowDebateModal(false); setDebateInput(""); }}>
           <div className="debate-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Hypothesis Debate</h3>
-            <p>Enter an investment question. The system will form a hypothesis and run a multi-analyst debate with 4 AI analysts and a judge.</p>
+            <h3>{t("debate.title")}</h3>
+            <p>{t("debate.description")}</p>
             <textarea
               ref={debateInputRef}
               value={debateInput}
               onChange={(e) => setDebateInput(e.target.value)}
               onKeyDown={handleDebateKeyDown}
-              placeholder="e.g. 600036值得买吗？/ 招商银行 vs 工商银行 / 银行板块还会涨吗？"
+              placeholder={t("debate.placeholder")}
               rows={3}
             />
             <div className="debate-modal-actions">
               <button className="debate-cancel" onClick={() => { setShowDebateModal(false); setDebateInput(""); }}>
-                Cancel
+                {t("debate.cancel")}
               </button>
               <button className="debate-submit" onClick={handleDebateSubmit} disabled={!debateInput.trim()}>
-                Start Debate
+                {t("debate.start")}
               </button>
             </div>
           </div>
