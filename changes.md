@@ -1,5 +1,65 @@
 # Changes
 
+## 2026-02-19 — Community sentiment via 股吧 integrated into agent flows
+
+**What:** Integrated 股吧 community sentiment into both the debate system and the main agent's deep analysis workflow. Uses scrape_webpage on guba.eastmoney.com (no auth required). Xueqiu was tested and found to be WAF-blocked without session cookies, so dropped. Also fixed missing playwright/JS-domain definitions in web.py.
+
+**Files:**
+- `tools/trade_analyzer.py` — modified: added `_fetch_community_sentiment()` function; updated `run_hypothesis_debate` Phase 1 to run sentiment subagent in parallel with data collection for single_stock and comparison question types; sentiment section appended to data_pack before debaters receive it
+- `tools/web.py` — fixed: added missing playwright try/except import, `PLAYWRIGHT_AVAILABLE` flag, and `_JS_HEAVY_DOMAINS` list (includes xueqiu.com, guba.eastmoney.com)
+- `tools/__init__.py` — modified: removed fetch_eastmoney_forum and fetch_xueqiu_comments from TOOL_SCHEMAS and TOOL_MAP (tools are not exposed to the agent; sentiment handled internally)
+- `config.py` — modified: updated forum routing to use scrape_webpage directly; updated deep analysis Step 1 to dispatch a sentiment subagent scraping guba; removed stale tool entries #25/#26 and their citation URLs
+
+**Details:**
+- `_fetch_community_sentiment` scrapes all stock entities in parallel, feeds combined text to a single MiniMax LLM call for summarization (~350 words output)
+- Result is appended to the debate data_pack so all 4 debaters and the judge see retail sentiment alongside financial data
+- For main agent (non-debate) deep analysis: dispatch_subagents handles guba scraping in parallel with financial data calls
+- guba URL format: `https://guba.eastmoney.com/list,{6-digit-code}.html` — no SH/SZ prefix, no auth needed
+
+## 2026-02-19 — Lift context window limits for 200k model + forum fallback
+
+**What:** Raised all context/token limits across agents to better utilize a 200k-context MiniMax model; added web_search fallback when both forum sentiment tools fail.
+
+**Files:**
+- `agent.py` — modified: SUMMARIZE_THRESHOLD 30→60, SUMMARIZE_KEEP_RECENT 10→20, MAX_TOOL_RESULT_CHARS 15k→40k, summarizer max_tokens 1500→2500
+- `tools/subagent.py` — modified: added max_tokens=3000 to subagent LLM calls
+- `tools/trade_analyzer.py` — modified: MAX_DEBATER_TOOL_RESULT_CHARS 12k→25k, data_pack cap 60k→100k chars, debater max_tokens 2000→4000, `_llm_call` default max_tokens 2000→3000 (judge/rebuttal)
+- `config.py` — modified: forum routing fallback — if both fetch_eastmoney_forum and fetch_xueqiu_comments fail, fall back to web_search for retail sentiment
+
+**Details:**
+- Hypothesis formation stays at max_tokens=2000 (JSON output, no headroom needed)
+- Summarizer fires less often (60 messages) but produces richer output when it does (2500 tokens)
+- Debater increase to 4000 tokens ensures 800-word analyses with data citations are never truncated
+
+## 2026-02-19 — Community sentiment tools (股吧 + 雪球)
+
+**What:** Added two new tools for retail investor sentiment from Eastmoney 股吧 and Xueqiu 雪球 forums; wired them into the deep analysis workflow and system prompt routing.
+
+**Files:**
+- `tools/eastmoney_forum.py` — created: fetches and parses the SSR HTML post list from guba.eastmoney.com; returns titles, view/reply counts, authors, timestamps; falls back to link extraction if CSS selectors miss
+- `tools/xueqiu.py` — already existed but was unregistered; no code changes
+- `tools/__init__.py` — modified: imported and registered `fetch_xueqiu_comments` and `fetch_eastmoney_forum` in both `TOOL_SCHEMAS` and `TOOL_MAP`
+- `config.py` — modified: replaced generic scrape_webpage forum guidance with dedicated tool routing; added both tools to the numbered tool list (#25, #26); added `fetch_eastmoney_forum` and `fetch_xueqiu_comments` to deep analysis Step 1 parallel calls; added citation URL mappings for both tools
+
+**Details:**
+- Eastmoney guba URL format: `https://guba.eastmoney.com/list,{code}.html` (page 1) / `list,{code}_{N}.html` (page N) — no SH/SZ prefix required
+- Xueqiu API format: `https://xueqiu.com/query/v1/symbol/search/status?symbol=SH603986` — auto-detects SH vs SZ from the 6-digit code prefix
+
+## 2026-02-19 — Full company reports in debate + revenue composition analysis
+
+**What:** Removed report truncation so the agent reads entire annual reports. Added revenue composition and macro-sensitivity dimensions to debate prompts. Included `fetch_company_report` in the debate data plan so analysts see segment breakdowns, management discussion, and revenue structure.
+
+**Files:**
+- `tools/sina_reports.py` — modified: removed 8000 char cap in `_extract_key_sections`; raised per-section line limit from 60 to 150; added segment/revenue markers (分行业, 分产品, 收入构成, 利息净收入, 经营情况讨论与分析, etc.)
+- `tools/trade_analyzer.py` — modified: added `fetch_company_report` (yearly + mid) to single_stock and comparison data plan examples; updated hypothesis formation rules to mandate annual reports; raised data_pack cap from 30k to 60k chars; raised `MAX_DEBATER_TOOL_RESULT_CHARS` from 3k to 12k; added dimensions #1 (收入结构与驱动力) and #2 (宏观敏感性) to `_DIMENSIONS_SINGLE_STOCK` and `_DIMENSIONS_COMPARISON`
+- `agent.py` — modified: raised `MAX_TOOL_RESULT_CHARS` from 4k to 15k so full reports reach the LLM
+
+**Details:**
+- Root cause: analysts never saw revenue breakdown because (a) `fetch_company_report` wasn't in the debate data plan, (b) report text was truncated to 8000 chars cutting off segment tables, (c) dimension prompts only asked about "revenue growth rate" not "where revenue comes from"
+- New dimensions ask analysts to: identify revenue sources by segment/product/region, quantify each segment's growth, assess macro sensitivity (rate/FX/policy exposure), and project which business lines benefit or suffer under current conditions
+- Truncation chain raised: tool output 4k→15k, debater tool results 3k→12k, data pack 30k→60k, report extraction unlimited
+- MiniMax-M1-80k has sufficient context window for these larger payloads
+
 ## 2026-02-19 — Per-user report management system + My Reports browser
 
 **What:** Implemented per-user file isolation, authenticated file serving, persistent file tracking in the database, descriptive file naming, and a "My Reports" panel for browsing/filtering all generated files.

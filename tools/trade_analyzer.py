@@ -35,7 +35,7 @@ _EXCLUDED_TOOLS = {
 }
 
 MAX_DEBATER_TOOL_ROUNDS = 3
-MAX_DEBATER_TOOL_RESULT_CHARS = 3000
+MAX_DEBATER_TOOL_RESULT_CHARS = 25000
 
 PRIOR_REPORT_MAX_AGE_DAYS = 5
 
@@ -126,25 +126,31 @@ Rules:
 
 _DIMENSIONS_SINGLE_STOCK = """逐一分析以下维度，每个维度需给出具体数据，计算相关比率或趋势。
 
-1. 估值分析: 当前PE/PB与近5年历史区间和行业中位数对比，百分位排名。
-2. 盈利趋势: 营收和净利润的环比/同比增速，增长是在加速、稳定还是减速？引用具体数字。
-3. 资产负债: 资产负债率趋势、流动比率、现金头寸，标记任何恶化迹象。
-4. 现金流: 经营现金流/净利润比率（盈利质量），近4个季度自由现金流趋势。
-5. 资金流向: 机构净流入/流出方向及规模，量化描述。
-6. 股东变动: 前十大股东持仓变化——增持/减持/新进，净方向判断。
-7. 分红: 近12个月股息率、派息率、近3年以上的分红连续性。
-8. 前瞻展望: 严格基于数据趋势（非推测），哪些可量化的变化可能延续？"""
+1. 收入结构与驱动力: 主要收入来源（分行业/分产品/分地区）各占比多少？哪些业务在增长、哪些在萎缩？增长驱动力是量还是价？对于银行：利息净收入、手续费收入、投资收益各占比及变化趋势。
+2. 宏观敏感性: 该公司收入结构对利率/汇率/行业周期/政策的暴露程度。例如：利率下行对银行净息差的影响，出口依赖型企业对汇率的敏感度。引用历史数据量化。
+3. 估值分析: 当前PE/PB与近5年历史区间和行业中位数对比，百分位排名。
+4. 盈利趋势: 营收和净利润的环比/同比增速，增长是在加速、稳定还是减速？引用具体数字。
+5. 资产负债: 资产负债率趋势、流动比率、现金头寸，标记任何恶化迹象。
+6. 现金流: 经营现金流/净利润比率（盈利质量），近4个季度自由现金流趋势。
+7. 资金流向: 机构净流入/流出方向及规模，量化描述。
+8. 股东变动: 前十大股东持仓变化——增持/减持/新进，净方向判断。
+9. 分红: 近12个月股息率、派息率、近3年以上的分红连续性。
+10. 前瞻展望: 基于收入结构和宏观环境，哪些业务线可能受益或承压？量化推演。
+11. 社区情绪 (仅供参考): 数据包中包含来自东方财富股吧的散户讨论摘要。简要引用其整体情绪（看涨/看跌/中性）和核心主题。你可以接受或质疑该情绪信号——如与基本面相符则说明原因，如相悖则给出数据反驳。散户情绪不得作为主要论据，但必须被提及。"""
 
 _DIMENSIONS_COMPARISON = """逐维度比较两个标的，每个维度需引用双方的具体数据。
 
-1. 估值对比: 各自的PE/PB，哪个折价/溢价？差距多大？
-2. 盈利对比: 各自的营收和利润增速，哪个趋势更好？
-3. 资产负债对比: 各自的资产负债率和杠杆水平，哪个财务状况更稳健？
-4. 现金流对比: 各自的经营现金流/净利润比率，哪个盈利质量更高？
-5. 资金流向对比: 机构资金流入对比，哪个获得更多净流入？
-6. 股东变动对比: 各自前十大股东持仓变化，净方向对比。
-7. 分红对比: 各自股息率和可持续性，哪个股东回报更好？
-8. 综合优劣: 严格基于数据，各自有哪些可量化的优势？"""
+1. 收入结构对比: 各自主要收入来源（分行业/分产品）占比，哪些业务驱动增长？收入多元化程度对比。
+2. 宏观敏感性对比: 各自收入结构对利率/汇率/政策的暴露程度差异，哪个更具防御性？
+3. 估值对比: 各自的PE/PB，哪个折价/溢价？差距多大？
+4. 盈利对比: 各自的营收和利润增速，哪个趋势更好？
+5. 资产负债对比: 各自的资产负债率和杠杆水平，哪个财务状况更稳健？
+6. 现金流对比: 各自的经营现金流/净利润比率，哪个盈利质量更高？
+7. 资金流向对比: 机构资金流入对比，哪个获得更多净流入？
+8. 股东变动对比: 各自前十大股东持仓变化，净方向对比。
+9. 分红对比: 各自股息率和可持续性，哪个股东回报更好？
+10. 综合优劣: 基于收入结构和宏观环境，各自的结构性优势和劣势？
+11. 社区情绪对比 (仅供参考): 引用数据包中两个标的的股吧散户情绪，对比哪个情绪更积极。简述情绪是否与基本面一致，可接受或质疑该信号，但必须提及。"""
 
 _DIMENSIONS_SECTOR = """分析该板块/市场的以下维度:
 
@@ -417,6 +423,8 @@ Question: "浦发银行值得投资吗"
   "question_type": "single_stock",
   "entities": [{"type": "stock", "code": "600000", "name": "浦发银行"}],
   "data_plan": [
+    {"tool": "fetch_company_report", "args": {"stock_code": "600000", "report_type": "yearly"}},
+    {"tool": "fetch_company_report", "args": {"stock_code": "600000", "report_type": "mid"}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "income", "periods": 8}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "balance", "periods": 4}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "cashflow", "periods": 4}},
@@ -438,6 +446,8 @@ Question: "招商银行和工商银行哪个更值得投资"
   "question_type": "comparison",
   "entities": [{"type": "stock", "code": "600036", "name": "招商银行"}, {"type": "stock", "code": "601398", "name": "工商银行"}],
   "data_plan": [
+    {"tool": "fetch_company_report", "args": {"stock_code": "600036", "report_type": "yearly"}},
+    {"tool": "fetch_company_report", "args": {"stock_code": "601398", "report_type": "yearly"}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600036", "statement": "income", "periods": 8}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600036", "statement": "balance", "periods": 4}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600036", "statement": "cashflow", "periods": 4}},
@@ -502,8 +512,8 @@ RULES:
 - Output valid JSON only, no other text.
 - The hypothesis must be a concrete, testable statement (not a question).
 - data_plan: max 20 tool calls. Choose tools relevant to the question type.
-- For single_stock: always include income/balance/cashflow/quote/capital_flow/shareholders/dividends (7 standard tools).
-- For comparison: include the 7 standard tools for each stock.
+- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(mid or q3) for the full annual report (contains revenue breakdown, segment analysis, management discussion). Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends.
+- For comparison: include fetch_company_report(yearly) for each stock, plus the standard tools for each.
 - For sector/general: use screener, hotspots, flows, and web search.
 - pro_framing and con_framing should be concise instructions for the analysts.
 - verdict_options must have exactly 3 options.
@@ -623,9 +633,9 @@ async def _collect_data_from_plan(
 
     data_pack = "\n\n".join(sections)
 
-    # Truncate if too long
-    if len(data_pack) > 30000:
-        data_pack = data_pack[:30000] + "\n...[数据已截断]"
+    # Truncate if too long — generous limit for 200k context window
+    if len(data_pack) > 100000:
+        data_pack = data_pack[:100000] + "\n...[数据已截断]"
 
     return data_pack
 
@@ -701,7 +711,7 @@ async def _llm_call_with_tools(
                     model=model,
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=2000,
+                    max_tokens=4000,
                     tools=tool_schemas if use_tools else None,
                 ),
                 timeout=90,
@@ -759,7 +769,7 @@ async def _llm_call_with_tools(
 # Phase 2: Opening Arguments
 # ---------------------------------------------------------------------------
 
-async def _llm_call(client: AsyncOpenAI, model: str, system: str, user: str, source: str = "", label: str = "", thinking_fn=None, timeout: int = 90, max_tokens: int = 2000) -> str:
+async def _llm_call(client: AsyncOpenAI, model: str, system: str, user: str, source: str = "", label: str = "", thinking_fn=None, timeout: int = 90, max_tokens: int = 3000) -> str:
     """Make a single LLM call and return the response text."""
     try:
         resp = await asyncio.wait_for(
@@ -974,6 +984,10 @@ Structure EXACTLY as follows (**write entirely in {response_language}**):
 ## 反方核心论据 (反对H₀)
 
 3-5 bullet points. Each bullet: one sentence with specific number.
+
+## 社区情绪 (股吧散户观点)
+
+1-2 sentences. State the overall retail sentiment tone (看涨/看跌/中性) and the dominant retail narrative. Note whether it aligns with or contradicts the fundamental verdict.
 
 ## 争议焦点与数据分歧
 
@@ -1204,6 +1218,92 @@ async def _generate_report(
 
 
 # ---------------------------------------------------------------------------
+# Community Sentiment Subagent
+# ---------------------------------------------------------------------------
+
+def _guba_url(code: str) -> str:
+    return f"https://guba.eastmoney.com/list,{code}.html"
+
+
+async def _fetch_community_sentiment(
+    entities: list[dict],
+    status_fn=None,
+    thinking_fn=None,
+) -> str:
+    """Scrape 股吧 for each stock entity and summarize retail investor sentiment.
+
+    Runs scrape_webpage in parallel for all entities, then does a single LLM
+    call to summarize. Returns a formatted section ready to append to data_pack.
+    """
+    stock_entities = [e for e in entities if e.get("type") == "stock" and e.get("code")]
+    if not stock_entities:
+        return ""
+
+    if status_fn:
+        await status_fn("Community sentiment subagent · Scraping 股吧...")
+
+    # Scrape all stock guba pages in parallel
+    async def _scrape_one(code: str) -> tuple[str, str]:
+        url = _guba_url(code)
+        try:
+            result = await _execute_tool("scrape_webpage", {"url": url})
+            if isinstance(result, dict):
+                text = result.get("content", result.get("text", ""))
+                if not text and "error" in result:
+                    return url, f"(抓取失败: {result['error']})"
+                return url, str(text)[:5000]
+            return url, str(result)[:5000]
+        except Exception as e:
+            return url, f"(抓取失败: {e})"
+
+    scrape_results = await asyncio.gather(
+        *[_scrape_one(e["code"]) for e in stock_entities],
+        return_exceptions=True,
+    )
+
+    # Build combined text for the LLM
+    sections = []
+    source_urls = []
+    for i, entity in enumerate(stock_entities):
+        name = entity.get("name", entity["code"])
+        r = scrape_results[i]
+        if isinstance(r, Exception):
+            text = f"(错误: {r})"
+            url = _guba_url(entity["code"])
+        else:
+            url, text = r
+        source_urls.append(url)
+        sections.append(f"=== {name} 股吧 ({url}) ===\n{text}")
+
+    combined = "\n\n".join(sections)
+
+    if not combined.strip() or all("抓取失败" in s or "错误" in s for s in sections):
+        return "### 社区情绪 (Community Sentiment — 股吧)\n(论坛数据获取失败)"
+
+    system = (
+        "You are a financial analyst. Summarize retail investor sentiment from the following 股吧 forum posts. "
+        "Be factual and concise. Cover: (1) overall tone — bullish/bearish/mixed with rough ratio, "
+        "(2) key themes or catalysts being discussed, (3) main concerns or risks retail investors mention, "
+        "(4) any notable events or news driving discussion. "
+        "Under 350 words. Write in the same language as the posts (usually Chinese)."
+    )
+
+    if status_fn:
+        await status_fn("Community sentiment subagent · Summarizing 股吧 posts...")
+
+    summary = await _llm_call(
+        minimax_client, MINIMAX_MODEL,
+        system, combined,
+        source="sentiment", label="Community Sentiment Subagent",
+        thinking_fn=thinking_fn,
+        timeout=60, max_tokens=700,
+    )
+
+    url_list = "\n".join(f"- {u}" for u in source_urls)
+    return f"### 社区情绪 (Community Sentiment — 股吧)\n**数据来源:**\n{url_list}\n\n{summary}"
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
@@ -1240,13 +1340,30 @@ async def run_hypothesis_debate(user_question: str, context: str = "") -> dict:
     hypothesis = await _form_hypothesis(user_question, context, thinking_fn=_thinking)
     logger.info(f"[TradeAnalyzer] Hypothesis: {hypothesis.get('hypothesis', '')}")
 
-    # Phase 1: Data collection per plan
-    await _status("Collecting data per hypothesis plan...")
-    logger.info(f"[TradeAnalyzer] Phase 1: Collecting data ({len(hypothesis.get('data_plan', []))} tools)")
-    data_pack = await _collect_data_from_plan(
-        hypothesis.get("data_plan", []), context, hypothesis.get("entities"),
+    # Phase 1: Data collection + community sentiment subagent (in parallel)
+    entities = hypothesis.get("entities", [])
+    question_type = hypothesis.get("question_type", "general")
+    has_stocks = question_type in ("single_stock", "comparison") and any(
+        e.get("type") == "stock" for e in entities
     )
-    logger.info(f"[TradeAnalyzer] Data collected: {len(data_pack)} chars")
+
+    await _status("Collecting data + community sentiment in parallel...")
+    logger.info(f"[TradeAnalyzer] Phase 1: Data collection ({len(hypothesis.get('data_plan', []))} tools)"
+                + (" + 股吧 sentiment subagent" if has_stocks else ""))
+
+    if has_stocks:
+        data_pack, sentiment = await asyncio.gather(
+            _collect_data_from_plan(hypothesis.get("data_plan", []), context, entities),
+            _fetch_community_sentiment(entities, status_fn=_status, thinking_fn=_thinking),
+        )
+        if sentiment:
+            data_pack += f"\n\n{sentiment}"
+    else:
+        data_pack = await _collect_data_from_plan(
+            hypothesis.get("data_plan", []), context, entities,
+        )
+
+    logger.info(f"[TradeAnalyzer] Phase 1 complete: {len(data_pack)} chars")
 
     # Phase 2: Opening arguments
     await _status("MiniMax + Qwen · Opening arguments (4 analysts)...")

@@ -204,7 +204,7 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
                 }, ensure_ascii=False),
             })
         except Exception as e:
-            logger.error(f"Agent error: {e}")
+            logger.error(f"Agent error: {e}", exc_info=True)
             await queue.put({
                 "event": "error",
                 "data": json.dumps({"error": str(e)}),

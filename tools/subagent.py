@@ -79,6 +79,7 @@ async def dispatch_subagents(tasks: list[dict]) -> dict:
                     model=MINIMAX_MODEL,
                     messages=messages,
                     tools=TOOL_SCHEMAS if TOOL_SCHEMAS else None,
+                    max_tokens=3000,
                 )
             except Exception as e:
                 logger.error(f"Sub-agent [{task_id}] LLM error: {e}")

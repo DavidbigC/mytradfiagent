@@ -128,6 +128,13 @@ def _extract_key_sections(text: str) -> str:
         "分红", "派息", "股利",
         "主营业务", "业务概要", "经营情况",
         "研发投入", "研发费用",
+        # Revenue composition / segment breakdown
+        "分行业", "分产品", "分地区", "分业务",
+        "收入构成", "收入结构", "营收构成", "营收结构",
+        "业务收入", "各业务", "各板块",
+        "利息净收入", "手续费", "佣金", "投资收益",
+        "经营情况讨论与分析", "管理层讨论",
+        "行业格局", "竞争", "市场地位",
     ]
 
     lines = text.split("\n")
@@ -152,7 +159,7 @@ def _extract_key_sections(text: str) -> str:
         elif in_section:
             kept_lines.append(stripped)
             section_lines += 1
-            if section_lines > 60:  # Limit per section
+            if section_lines > 150:  # Limit per section
                 in_section = False
         else:
             # Also keep lines with numbers that look like financial data
@@ -161,13 +168,9 @@ def _extract_key_sections(text: str) -> str:
 
     result = "\n".join(kept_lines)
 
-    # If we got too little from section extraction, fall back to first N chars
+    # If we got too little from section extraction, fall back to full text
     if len(result) < 500:
-        result = text[:8000]
-
-    # Truncate to reasonable size
-    if len(result) > 8000:
-        result = result[:8000] + "\n...[truncated]"
+        result = text
 
     return result
 

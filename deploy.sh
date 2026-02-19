@@ -42,9 +42,14 @@ else
 fi
 chown -R $APP_USER:$APP_USER $APP_DIR
 
-# 4. Python environment
+# 4. Python environment + Playwright browsers
 echo "[4/7] Setting up Python environment..."
 sudo -u $APP_USER bash -c "cd $APP_DIR && python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
+
+echo "  Installing Playwright system dependencies..."
+$APP_DIR/.venv/bin/playwright install-deps chromium > /dev/null 2>&1 || true
+echo "  Installing Playwright Chromium browser..."
+sudo -u $APP_USER bash -c "$APP_DIR/.venv/bin/playwright install chromium" > /dev/null 2>&1
 
 # 5. Frontend build
 echo "[5/7] Building frontend..."

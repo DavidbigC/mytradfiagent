@@ -11,6 +11,21 @@ except ImportError:
     except ImportError:
         DDGS = None
 
+try:
+    from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+
+# Sites known to require JS rendering for meaningful content
+_JS_HEAVY_DOMAINS = [
+    "xueqiu.com",
+    "guba.eastmoney.com",
+    "eastmoney.com/a/",
+    "weibo.com",
+    "bilibili.com",
+]
+
 logger = logging.getLogger(__name__)
 
 WEB_SEARCH_SCHEMA = {
@@ -140,7 +155,102 @@ async def _scrape_via_bs4(url: str) -> dict:
     return {"title": title, "content": body}
 
 
+async def _scrape_via_playwright(url: str) -> dict | None:
+    """Scrape JS-heavy sites using Playwright browser automation."""
+    if not PLAYWRIGHT_AVAILABLE:
+        logger.warning("Playwright not available, skipping browser automation")
+        return None
+    
+    try:
+        async with async_playwright() as p:
+            # Launch browser in headless mode
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            page = await context.new_page()
+            
+            # Navigate and wait for content to load
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            # Wait a bit more for dynamic content (forums often load posts via JS)
+            await asyncio.sleep(2)
+            
+            # Get page content
+            title = await page.title()
+            content = await page.content()
+            
+            await browser.close()
+            
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(content, "html.parser")
+            
+            # Remove non-content elements
+            for tag in soup(["script", "style", "nav", "footer", "header", "iframe", "noscript"]):
+                tag.decompose()
+            for sel in [".nav", ".menu", ".sidebar", ".ad", ".advertisement", ".breadcrumb", ".footer", ".header"]:
+                for tag in soup.select(sel):
+                    tag.decompose()
+            
+            # Extract tables
+            tables = []
+            for table in soup.find_all("table"):
+                rows = []
+                for tr in table.find_all("tr"):
+                    cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+                    if cells:
+                        rows.append(" | ".join(cells))
+                if rows:
+                    tables.append("\n".join(rows))
+            
+            # Get main text content
+            body = soup.get_text(separator="\n", strip=True)
+            lines = [line for line in body.split("\n") if line.strip()]
+            body = "\n".join(lines)
+            
+            if tables:
+                body += "\n\n=== EXTRACTED TABLES ===\n"
+                for i, t in enumerate(tables[:10]):  # Limit tables
+                    body += f"\n--- Table {i+1} ---\n{t}\n"
+            
+            if len(body) < 100:
+                logger.warning(f"Playwright returned minimal content for {url}")
+                return None
+            
+            logger.info(f"Playwright succeeded for {url} ({len(body)} chars)")
+            return {"title": title, "content": body}
+            
+    except PlaywrightTimeoutError:
+        logger.warning(f"Playwright timeout for {url}")
+        return None
+    except Exception as e:
+        logger.warning(f"Playwright failed for {url}: {e}")
+        return None
+
+
+def _needs_playwright(url: str) -> bool:
+    """Check if URL needs Playwright (JS-heavy or known problematic domains)."""
+    return any(domain in url for domain in _JS_HEAVY_DOMAINS)
+
+
 async def scrape_webpage(url: str) -> dict:
+    # Check if this site needs Playwright (forums, SPAs, anti-bot protection)
+    if _needs_playwright(url) and PLAYWRIGHT_AVAILABLE:
+        logger.info(f"Using Playwright for JS-heavy site: {url}")
+        playwright_result = await _scrape_via_playwright(url)
+        if playwright_result:
+            content = playwright_result["content"]
+            if len(content) > 15000:
+                content = content[:15000] + "\n...[truncated]"
+            return {
+                "url": url,
+                "title": playwright_result["title"],
+                "content": content,
+                "source": "playwright",
+            }
+        # If Playwright fails, fall through to other methods
+    
     # Primary: markdown.new — cleaner output, handles encoding, preserves structure
     md_content = await _scrape_via_markdown_new(url)
     if md_content:
@@ -153,6 +263,16 @@ async def scrape_webpage(url: str) -> dict:
     logger.info(f"Falling back to BS4 scrape for {url}")
     result = await _scrape_via_bs4(url)
     content = result["content"]
+    
+    # If BS4 got minimal content and Playwright is available, try Playwright as last resort
+    if len(content) < 200 and PLAYWRIGHT_AVAILABLE:
+        logger.info(f"BS4 got minimal content, trying Playwright for {url}")
+        playwright_result = await _scrape_via_playwright(url)
+        if playwright_result and len(playwright_result["content"]) > len(content):
+            content = playwright_result["content"]
+            result["title"] = playwright_result["title"]
+            result["source"] = "playwright_fallback"
+    
     if len(content) > 15000:
         content = content[:15000] + "\n...[truncated]"
-    return {"url": url, "title": result["title"], "content": content, "source": "bs4_fallback"}
+    return {"url": url, "title": result.get("title", ""), "content": content, "source": result.get("source", "bs4_fallback")}

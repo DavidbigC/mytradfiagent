@@ -37,8 +37,8 @@ user_id_context: contextvars.ContextVar[UUID | None] = contextvars.ContextVar(
 
 PROJECT_ROOT = os.path.dirname(__file__)
 
-# Max chars per tool result sent to LLM — prevents token explosion from large data dumps
-MAX_TOOL_RESULT_CHARS = 4000
+# Max chars per tool result sent to LLM — generous for 200k context window
+MAX_TOOL_RESULT_CHARS = 40000
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,8 @@ client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
 MAX_TURNS = 30
 
 # Summarization settings
-SUMMARIZE_THRESHOLD = 30  # Trigger summarization when message count exceeds this
-SUMMARIZE_KEEP_RECENT = 10  # Keep this many recent messages unsummarized
+SUMMARIZE_THRESHOLD = 60  # Trigger summarization when message count exceeds this
+SUMMARIZE_KEEP_RECENT = 20  # Keep this many recent messages unsummarized
 
 _SUMMARIZE_PROMPT = """Summarize the following conversation between a user and a financial research assistant.
 Preserve ALL key facts: stock codes, numbers, dates, conclusions, tool results, and decisions made.
@@ -103,7 +103,7 @@ async def _maybe_summarize(conv_id: UUID, messages: list[dict]) -> list[dict]:
         response = await client.chat.completions.create(
             model=MINIMAX_MODEL,
             messages=[{"role": "user", "content": _SUMMARIZE_PROMPT.format(conversation=conv_text)}],
-            max_tokens=1500,
+            max_tokens=2500,
         )
         summary = response.choices[0].message.content or ""
         # Strip any <think> tags from the summary
