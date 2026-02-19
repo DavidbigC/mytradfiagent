@@ -107,13 +107,16 @@ export async function createConversation(token: string) {
   return res.json();
 }
 
-export async function fetchMessages(token: string, convId: string, limit = 50) {
+export async function fetchMessages(token: string, convId: string, limit = 50): Promise<{ messages: any[]; files: any[] }> {
   const res = await fetch(`${BASE}/api/chat/conversations/${convId}/messages?limit=${limit}`, {
     headers: headers(token),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to load messages");
-  return res.json();
+  const data = await res.json();
+  // Handle both old (array) and new ({messages, files}) response shapes
+  if (Array.isArray(data)) return { messages: data, files: [] };
+  return data;
 }
 
 export async function deleteConversation(token: string, convId: string) {
@@ -123,6 +126,16 @@ export async function deleteConversation(token: string, convId: string) {
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to delete conversation");
+  return res.json();
+}
+
+// --- User Files ---
+
+export async function fetchUserFiles(token: string, fileType?: string) {
+  const params = fileType ? `?file_type=${fileType}` : "";
+  const res = await fetch(`${BASE}/api/chat/files${params}`, { headers: headers(token) });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to load files");
   return res.json();
 }
 

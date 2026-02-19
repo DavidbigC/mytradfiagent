@@ -3,6 +3,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import os
 import re
 import time
 from typing import Callable
@@ -15,6 +16,7 @@ from accounts import (
     load_recent_messages, save_message,
     get_conversation_summary, save_conversation_summary,
     load_messages_for_summarization,
+    save_file_record,
 )
 
 # ContextVar so tools (e.g. trade_analyzer) can emit status updates
@@ -27,6 +29,13 @@ status_callback: contextvars.ContextVar[Callable | None] = contextvars.ContextVa
 thinking_callback: contextvars.ContextVar[Callable | None] = contextvars.ContextVar(
     "thinking_callback", default=None,
 )
+
+# ContextVar so tools can access the current user's ID for per-user output dirs.
+user_id_context: contextvars.ContextVar[UUID | None] = contextvars.ContextVar(
+    "user_id_context", default=None,
+)
+
+PROJECT_ROOT = os.path.dirname(__file__)
 
 # Max chars per tool result sent to LLM — prevents token explosion from large data dumps
 MAX_TOOL_RESULT_CHARS = 4000
@@ -240,9 +249,10 @@ async def _run_agent_inner(
         tool_names = [tc.function.name for tc in msg.tool_calls]
         await _emit(f"Running: {', '.join(tool_names)}...")
 
-        # Make status/thinking callbacks available to tools via contextvars
+        # Make status/thinking/user_id callbacks available to tools via contextvars
         status_token = status_callback.set(_emit)
         thinking_token = thinking_callback.set(_emit_thinking)
+        uid_token = user_id_context.set(user_id)
         try:
             # Execute all tool calls in parallel
             t0 = time.time()
@@ -253,9 +263,11 @@ async def _run_agent_inner(
         finally:
             status_callback.reset(status_token)
             thinking_callback.reset(thinking_token)
+            user_id_context.reset(uid_token)
         logger.info(f"Executed {len(results)} tool(s) in parallel in {elapsed:.2f}s")
 
         tool_results = []
+        files_before = len(files)
         for r in results:
             result = r["result"]
             if isinstance(result, dict) and "file" in result:
@@ -277,6 +289,15 @@ async def _run_agent_inner(
             )
 
         messages.extend(tool_results)
+
+        # Save file records for any new files from this turn
+        for file_path in files[files_before:]:
+            try:
+                rel_path = os.path.relpath(file_path, PROJECT_ROOT)
+                ext = os.path.splitext(file_path)[1].lstrip(".")
+                await save_file_record(user_id, conv_id, rel_path, os.path.basename(file_path), ext)
+            except Exception as e:
+                logger.warning(f"Failed to save file record for {file_path}: {e}")
 
     # Hit the turn limit — ask the model to summarize what it has so far
     logger.info("Hit max turns, requesting summary from model")
@@ -365,12 +386,14 @@ async def _run_debate_inner(
     # Pass user question directly — hypothesis engine handles everything
     status_token = status_callback.set(_emit)
     thinking_token = thinking_callback.set(_emit_thinking)
+    uid_token = user_id_context.set(user_id)
     try:
         from tools.trade_analyzer import run_hypothesis_debate
         result = await run_hypothesis_debate(user_message, context=conversation_context)
     finally:
         status_callback.reset(status_token)
         thinking_callback.reset(thinking_token)
+        user_id_context.reset(uid_token)
 
     # Build response text
     verdict = result.get("verdict", "")
@@ -378,6 +401,15 @@ async def _run_debate_inner(
     hypothesis = result.get("hypothesis", user_message)
     report_title = result.get("report_title", hypothesis)
     files = result.get("files", [])
+
+    # Save file records for debate-generated files
+    for file_path in files:
+        try:
+            rel_path = os.path.relpath(file_path, PROJECT_ROOT)
+            ext = os.path.splitext(file_path)[1].lstrip(".")
+            await save_file_record(user_id, conv_id, rel_path, os.path.basename(file_path), ext)
+        except Exception as e:
+            logger.warning(f"Failed to save file record for {file_path}: {e}")
 
     text = f"## {report_title}\n\n**H₀: {hypothesis}**\n\n{summary}\n\n---\n\n{verdict}"
 

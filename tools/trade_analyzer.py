@@ -259,7 +259,7 @@ def _find_prior_report(stock_name: str) -> str | None:
     Returns the report content (truncated) or None.
     """
     import glob
-    pattern = os.path.join(_OUTPUT_DIR, f"{stock_name}_*.md")
+    pattern = os.path.join(_get_output_dir(), f"{stock_name}_*.md")
     matches = glob.glob(pattern)
     if not matches:
         return None
@@ -1063,8 +1063,23 @@ async def _run_summary(
 # Phase 6: Report Generation (MD + PDF)
 # ---------------------------------------------------------------------------
 
-_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
-os.makedirs(_OUTPUT_DIR, exist_ok=True)
+_BASE_OUTPUT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+os.makedirs(_BASE_OUTPUT, exist_ok=True)
+
+
+def _get_output_dir() -> str:
+    """Return per-user output dir if user context is set, else base output dir."""
+    try:
+        from agent import user_id_context
+        uid = user_id_context.get(None)
+        if uid:
+            d = os.path.join(_BASE_OUTPUT, str(uid))
+            os.makedirs(d, exist_ok=True)
+            return d
+    except (ImportError, LookupError):
+        pass
+    os.makedirs(_BASE_OUTPUT, exist_ok=True)
+    return _BASE_OUTPUT
 
 
 def _build_report_markdown(
@@ -1161,7 +1176,8 @@ async def _generate_report(
         base_name = f"{safe}_{ts}"
 
     # Save markdown
-    md_path = os.path.join(_OUTPUT_DIR, f"{base_name}.md")
+    out_dir = _get_output_dir()
+    md_path = os.path.join(out_dir, f"{base_name}.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_content)
 
@@ -1171,7 +1187,7 @@ async def _generate_report(
         pdf_result = await generate_pdf(title=title, content=md_content)
         pdf_orig = pdf_result.get("file", "")
         # Rename to match our naming convention
-        pdf_path = os.path.join(_OUTPUT_DIR, f"{base_name}.pdf")
+        pdf_path = os.path.join(out_dir, f"{base_name}.pdf")
         if pdf_orig and os.path.exists(pdf_orig):
             os.rename(pdf_orig, pdf_path)
         else:

@@ -6,14 +6,16 @@ import os
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from db import get_pool
-from auth import get_current_user
-from accounts import new_conversation
+from auth import get_current_user, get_current_user_or_query_token
+from accounts import new_conversation, load_conversation_files, load_user_files
 from agent import run_agent, run_debate
 from tools.output import parse_references
+
+PROJECT_ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +67,7 @@ async def get_messages(conv_id: str, limit: int = 50, user: dict = Depends(get_c
                ORDER BY id ASC LIMIT $2""",
             cid, limit,
         )
-    return [
+    messages = [
         {
             "role": r["role"],
             "content": r["content"] or "",
@@ -75,6 +77,8 @@ async def get_messages(conv_id: str, limit: int = 50, user: dict = Depends(get_c
         }
         for r in rows
     ]
+    files = await load_conversation_files(cid)
+    return {"messages": messages, "files": files}
 
 
 @router.delete("/conversations/{conv_id}")
@@ -90,6 +94,39 @@ async def delete_conversation(conv_id: str, user: dict = Depends(get_current_use
         await conn.execute("DELETE FROM messages WHERE conversation_id = $1", cid)
         await conn.execute("DELETE FROM conversations WHERE id = $1", cid)
     return {"ok": True}
+
+
+@router.get("/files")
+async def list_user_files(file_type: str | None = None, user: dict = Depends(get_current_user)):
+    """List all files for the current user, optionally filtered by type (e.g. 'pdf', 'png')."""
+    files = await load_user_files(user["user_id"], file_type=file_type)
+    return files
+
+
+@router.get("/files/{filepath:path}")
+async def serve_file(filepath: str, user: dict = Depends(get_current_user_or_query_token)):
+    """Serve a user-owned file with authentication."""
+    # Verify user owns this file via DB lookup
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT user_id FROM files WHERE filepath = $1",
+            filepath,
+        )
+    if not row:
+        raise HTTPException(404, "File not found")
+    if row["user_id"] != user["user_id"]:
+        raise HTTPException(403, "Access denied")
+
+    # Prevent path traversal attacks
+    full_path = os.path.abspath(os.path.join(PROJECT_ROOT, filepath))
+    if not full_path.startswith(os.path.abspath(PROJECT_ROOT)):
+        raise HTTPException(403, "Invalid file path")
+
+    if not os.path.isfile(full_path):
+        raise HTTPException(404, "File not found on disk")
+
+    return FileResponse(full_path)
 
 
 @router.post("/send")
@@ -152,11 +189,11 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             except Exception:
                 pass
 
-            # Convert file paths to /output/ URLs
+            # Convert file paths to authenticated API URLs
             file_urls = []
             for f in files:
-                basename = os.path.basename(f)
-                file_urls.append(f"/output/{basename}")
+                rel_path = os.path.relpath(f, PROJECT_ROOT)
+                file_urls.append(f"/api/chat/files/{rel_path}")
 
             await queue.put({
                 "event": "done",

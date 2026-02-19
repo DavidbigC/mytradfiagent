@@ -178,6 +178,79 @@ async def save_conversation_summary(conversation_id: UUID, summary: str, up_to_m
         )
 
 
+async def save_file_record(
+    user_id: UUID,
+    conversation_id: UUID,
+    filepath: str,
+    filename: str,
+    file_type: str | None = None,
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO files (user_id, conversation_id, filepath, filename, file_type)
+               VALUES ($1, $2, $3, $4, $5)""",
+            user_id, conversation_id, filepath, filename, file_type,
+        )
+
+
+async def load_user_files(user_id: UUID, file_type: str | None = None) -> list[dict]:
+    """Load all files for a user, optionally filtered by type."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if file_type:
+            rows = await conn.fetch(
+                """SELECT f.filepath, f.filename, f.file_type, f.created_at,
+                          c.title AS conversation_title
+                   FROM files f
+                   JOIN conversations c ON c.id = f.conversation_id
+                   WHERE f.user_id = $1 AND f.file_type = $2
+                   ORDER BY f.created_at DESC""",
+                user_id, file_type,
+            )
+        else:
+            rows = await conn.fetch(
+                """SELECT f.filepath, f.filename, f.file_type, f.created_at,
+                          c.title AS conversation_title
+                   FROM files f
+                   JOIN conversations c ON c.id = f.conversation_id
+                   WHERE f.user_id = $1
+                   ORDER BY f.created_at DESC""",
+                user_id,
+            )
+    return [
+        {
+            "filepath": r["filepath"],
+            "filename": r["filename"],
+            "file_type": r["file_type"],
+            "created_at": r["created_at"].isoformat(),
+            "conversation_title": r["conversation_title"] or "Untitled",
+        }
+        for r in rows
+    ]
+
+
+async def load_conversation_files(conversation_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT filepath, filename, file_type, created_at
+               FROM files
+               WHERE conversation_id = $1
+               ORDER BY created_at ASC""",
+            conversation_id,
+        )
+    return [
+        {
+            "filepath": r["filepath"],
+            "filename": r["filename"],
+            "file_type": r["file_type"],
+            "created_at": r["created_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
 async def load_messages_for_summarization(conversation_id: UUID) -> list[dict]:
     """Load ALL messages (user + assistant only) for generating a summary.
     Returns dicts with 'id', 'role', 'content'."""

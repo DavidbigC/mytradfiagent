@@ -39,3 +39,24 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
     return {"user_id": UUID(payload["sub"]), "username": payload["username"]}
+
+
+async def get_current_user_or_query_token(request: Request) -> dict:
+    """Authenticate via Authorization header or ?token= query param.
+
+    The query param fallback is needed for <img src> tags which can't set headers.
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+    else:
+        token = request.query_params.get("token", "")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"user_id": UUID(payload["sub"]), "username": payload["username"]}

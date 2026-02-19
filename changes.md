@@ -1,5 +1,34 @@
 # Changes
 
+## 2026-02-19 — Per-user report management system + My Reports browser
+
+**What:** Implemented per-user file isolation, authenticated file serving, persistent file tracking in the database, descriptive file naming, and a "My Reports" panel for browsing/filtering all generated files.
+
+**Files:**
+- `db.py` — modified: added `files` table with indexes on conversation_id, user_id, and filepath
+- `accounts.py` — modified: added `save_file_record()`, `load_conversation_files()`, `load_user_files()` (with optional type filter + conversation title join)
+- `agent.py` — modified: added `user_id_context` contextvar, set it around tool execution in both `_run_agent_inner` and `_run_debate_inner`, save file records to DB after tool results
+- `tools/output.py` — modified: replaced static `OUTPUT_DIR` with `_get_output_dir()` that returns per-user subdirectory; added `_safe_filename()` for descriptive names based on title (e.g. `招商银行分析_20260219_a1b2.pdf`)
+- `tools/trade_analyzer.py` — modified: same `_get_output_dir()` pattern replacing `_OUTPUT_DIR`
+- `auth.py` — modified: added `get_current_user_or_query_token()` supporting both Authorization header and `?token=` query param (for `<img src>`)
+- `api_chat.py` — modified: added `GET /api/chat/files` (list all user files with optional `?file_type=` filter); added `GET /api/chat/files/{filepath}` (authenticated serve with path traversal protection); updated `get_messages` to return `{messages, files}`; updated file URL generation to `/api/chat/files/` prefix
+- `web.py` — modified: removed public `/output` static mount
+- `frontend/src/api.ts` — modified: `fetchMessages` handles `{messages, files}` response; added `fetchUserFiles()`
+- `frontend/src/components/ChatView.tsx` — modified: attaches conversation files to last assistant message on load
+- `frontend/src/components/MessageBubble.tsx` — modified: images use `?token=` query param auth; PDFs/downloads use fetch + blob URL
+- `frontend/src/components/ReportsPanel.tsx` — created: modal panel with type filter tabs (All/PDF/Charts/MD), search, thumbnail previews for images, click-to-download
+- `frontend/src/components/Sidebar.tsx` — modified: added "My Reports" button + ReportsPanel toggle
+- `frontend/src/i18n.tsx` — modified: added reports panel translation keys
+- `frontend/src/styles/index.css` — modified: added reports button + reports panel styles
+
+**Details:**
+- Files table stores: user_id, conversation_id, filepath (relative), filename, file_type
+- File ownership enforced at DB level — users can only access their own files
+- Path traversal protection: resolved path must stay within PROJECT_ROOT
+- Filenames now descriptive: `{sanitized_title}_{YYYYMMDD}_{4hex}.{ext}` instead of `report_{8hex}.pdf`
+- My Reports panel reuses admin panel overlay/layout, adds search + type filter tabs
+- Old flat `/output/` URLs no longer work — only new `/api/chat/files/` URLs are served
+
 ## 2026-02-18 — Match debate report language to user input
 
 **What:** Fixed debate analyst outputs appearing in English when user asks in Chinese. Added dynamic `response_language` field to hypothesis and used it across all prompts to enforce consistent output language matching the user's input.

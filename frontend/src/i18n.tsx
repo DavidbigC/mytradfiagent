@@ -33,6 +33,16 @@ const translations = {
   "debate.cancel": { en: "Cancel", zh: "取消" },
   "debate.start": { en: "Start Debate", zh: "开始辩论" },
 
+  // Reports panel
+  "sidebar.reports": { en: "My Reports", zh: "我的报告" },
+  "reports.title": { en: "My Reports", zh: "我的报告" },
+  "reports.all": { en: "All", zh: "全部" },
+  "reports.pdfs": { en: "PDFs", zh: "PDF" },
+  "reports.charts": { en: "Charts", zh: "图表" },
+  "reports.markdowns": { en: "Markdown", zh: "Markdown" },
+  "reports.empty": { en: "No reports yet", zh: "暂无报告" },
+  "reports.from": { en: "from", zh: "来自" },
+
   // Thinking
   "thinking.show": { en: "show", zh: "展开" },
   "thinking.hide": { en: "hide", zh: "收起" },

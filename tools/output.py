@@ -32,8 +32,33 @@ if _cn_font:
     plt.rcParams["font.sans-serif"] = [_cn_font, "DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+_BASE_OUTPUT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+os.makedirs(_BASE_OUTPUT, exist_ok=True)
+
+
+def _safe_filename(title: str, prefix: str, ext: str) -> str:
+    """Build a descriptive filename from a title, e.g. '招商银行分析' -> '招商银行分析_20260219_a1b2.pdf'."""
+    safe = re.sub(r"[^\w\u4e00-\u9fff\-]+", "_", title).strip("_")[:40]
+    ts = datetime.now().strftime("%Y%m%d")
+    short_id = uuid.uuid4().hex[:4]
+    if safe:
+        return f"{safe}_{ts}_{short_id}.{ext}"
+    return f"{prefix}_{ts}_{short_id}.{ext}"
+
+
+def _get_output_dir() -> str:
+    """Return per-user output dir if user context is set, else base output dir."""
+    try:
+        from agent import user_id_context
+        uid = user_id_context.get(None)
+        if uid:
+            d = os.path.join(_BASE_OUTPUT, str(uid))
+            os.makedirs(d, exist_ok=True)
+            return d
+    except (ImportError, LookupError):
+        pass
+    os.makedirs(_BASE_OUTPUT, exist_ok=True)
+    return _BASE_OUTPUT
 
 GENERATE_CHART_SCHEMA = {
     "type": "function",
@@ -139,8 +164,8 @@ async def generate_chart(chart_type: str, title: str, series: list, x_label: str
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    filename = f"chart_{uuid.uuid4().hex[:8]}.png"
-    filepath = os.path.join(OUTPUT_DIR, filename)
+    filename = _safe_filename(title, "chart", "png")
+    filepath = os.path.join(_get_output_dir(), filename)
     fig.savefig(filepath, dpi=150)
     plt.close(fig)
 
@@ -448,8 +473,8 @@ async def generate_pdf(title: str, content: str) -> dict:
             pdf.ln(3)
         i += 1
 
-    filename = f"report_{uuid.uuid4().hex[:8]}.pdf"
-    filepath = os.path.join(OUTPUT_DIR, filename)
+    filename = _safe_filename(title, "report", "pdf")
+    filepath = os.path.join(_get_output_dir(), filename)
     pdf.output(filepath)
 
     return {"file": filepath, "message": f"PDF report saved: {filename}"}
@@ -556,7 +581,7 @@ def generate_references_image(refs: list[dict]) -> str | None:
 
     plt.tight_layout(pad=0.3)
     filename = f"refs_{uuid.uuid4().hex[:8]}.png"
-    filepath = os.path.join(OUTPUT_DIR, filename)
+    filepath = os.path.join(_get_output_dir(), filename)
     fig.savefig(filepath, dpi=150, bbox_inches="tight",
                 facecolor=fig.get_facecolor(), edgecolor="none")
     plt.close(fig)

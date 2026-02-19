@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../store";
 import { useT } from "../i18n";
 import AdminPanel from "./AdminPanel";
+import ReportsPanel from "./ReportsPanel";
 
 interface Conversation {
   id: string;
@@ -24,6 +25,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useT();
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showReports, setShowReports] = useState(false);
   const isAdmin = user?.username === "davidc";
 
   return (
@@ -33,6 +35,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="sidebar-header">
           <button className="new-chat-btn" onClick={onNew}>{t("sidebar.newChat")}</button>
           <button className="debate-btn" onClick={onDebate}>{t("sidebar.debate")}</button>
+          <button className="reports-btn" onClick={() => setShowReports(true)}>{t("sidebar.reports")}</button>
         </div>
 
         <div className="conversation-list">
@@ -69,6 +72,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       </aside>
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+      {showReports && <ReportsPanel onClose={() => setShowReports(false)} />}
     </>
   );
 }

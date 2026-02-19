@@ -80,9 +80,11 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
       return;
     }
     fetchMessages(token, conversationId)
-      .then((msgs) => {
+      .then((data) => {
+        const msgs = data.messages;
+        const convFiles = data.files || [];
         // Filter to user/assistant only for display
-        const display = msgs
+        const display: Message[] = msgs
           .filter((m: any) => m.role === "user" || m.role === "assistant")
           .map((m: any) => {
             if (m.role === "assistant") {
@@ -91,6 +93,16 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
             }
             return { role: m.role, content: m.content };
           });
+        // Attach conversation files to the last assistant message
+        if (convFiles.length > 0) {
+          const fileUrls = convFiles.map((f: any) => `/api/chat/files/${f.filepath}`);
+          for (let i = display.length - 1; i >= 0; i--) {
+            if (display[i].role === "assistant") {
+              display[i] = { ...display[i], files: fileUrls };
+              break;
+            }
+          }
+        }
         setMessages(display);
       })
       .catch((err) => {
