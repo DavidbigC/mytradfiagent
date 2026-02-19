@@ -2,10 +2,11 @@
 
 Provides:
 - Individual stock capital flow (daily, ~120 trading days)
-- Northbound/southbound flow via Stock Connect (full history since 2014)
+- Northbound flow via scraping daily EastMoney summary articles
 - Capital flow rankings (top stocks by institutional net buying)
 """
 
+import re
 import logging
 import httpx
 
@@ -74,18 +75,19 @@ FETCH_NORTHBOUND_FLOW_SCHEMA = {
     "function": {
         "name": "fetch_northbound_flow",
         "description": (
-            "Fetch historical northbound (沪深港通) capital flow — foreign money entering/leaving "
-            "A-shares via Stock Connect. Shows daily deal amount and deal count for Shanghai Connect "
-            "and Shenzhen Connect. Note: net inflow/outflow data was discontinued after Aug 2024 "
-            "due to regulatory changes; deal volume is still available."
+            "Fetch recent northbound (北向资金/沪深港通) capital flow data by scraping EastMoney's "
+            "daily summary articles. Returns total northbound trading volume as % of market, "
+            "plus the top-3 most-traded stocks for Shanghai Connect (沪股通) and Shenzhen Connect "
+            "(深股通) with exact trade amounts. More accurate than the old API which discontinued "
+            "net inflow/outflow data after Aug 2024."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "days": {
                     "type": "integer",
-                    "description": "Number of recent trading days to return (default 30)",
-                    "default": 30,
+                    "description": "Number of recent trading days to return (default 5, max 20)",
+                    "default": 5,
                 },
             },
             "required": [],
@@ -202,60 +204,78 @@ async def fetch_stock_capital_flow(stock_code: str, days: int = 20) -> dict:
     }
 
 
-async def fetch_northbound_flow(days: int = 30) -> dict:
-    """Fetch northbound (Stock Connect) daily flow history."""
-    days = min(max(days, 1), 500)
+# EastMoney article listing API — column 399 = 北向资金动态
+_NB_LIST_API = (
+    "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns"
+    "?column=399&biz=web_stock&client=web&req_trace=nb&pageSize={size}&pageIndex=1"
+)
 
-    _DC_BASE = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+# Parses the article summary, e.g.:
+# "交易所最新数据显示，2月13日北向资金共成交2696.41亿元，占两市总成交额的13.60%。
+#  紫金矿业、贵州茅台、寒武纪位列沪股通成交前三，成交额分别为25.26亿、21.84亿、18.75亿；
+#  宁德时代、天孚通信、中际旭创位列深股通成交前三，成交额分别为38.95亿、34.96亿、27.09亿。"
+_DESC_RE = re.compile(
+    r"(\d+月\d+日)北向资金共成交([\d.]+)亿元，占两市总成交额的([\d.]+)%。"
+    r"(.+?)、(.+?)、(.+?)位列沪股通成交前三，成交额分别为([\d.]+)亿、([\d.]+)亿、([\d.]+)亿；"
+    r"(.+?)、(.+?)、(.+?)位列深股通成交前三，成交额分别为([\d.]+)亿、([\d.]+)亿、([\d.]+)亿"
+)
 
-    async def _fetch_type(client: httpx.AsyncClient, mutual_type: str) -> list[dict]:
-        params = {
-            "reportName": "RPT_MUTUAL_DEAL_HISTORY",
-            "columns": "ALL",
-            "filter": f'(MUTUAL_TYPE="{mutual_type}")',
-            "pageSize": days,
-            "sortColumns": "TRADE_DATE",
-            "sortTypes": "-1",
-            "p": 1,
-            "pageNo": 1,
-            "source": "WEB",
-            "client": "WEB",
-        }
-        resp = await client.get(_DC_BASE, params=params, headers={
-            **_UA, "Referer": "https://data.eastmoney.com/"
-        })
-        resp.raise_for_status()
-        data = resp.json()
-        items = data.get("result", {}).get("data", []) if data.get("result") else []
-        records = []
-        for item in reversed(items):  # reverse to chronological order
-            records.append({
-                "date": item["TRADE_DATE"][:10],
-                "deal_amount_万": round(item.get("DEAL_AMT") or 0, 2),
-                "deal_count": item.get("DEAL_NUM"),
-                "lead_stock": f"{item.get('LEAD_STOCKS_NAME', '')}({item.get('LEAD_STOCKS_CODE', '')})",
-                "index_change": f"{item.get('INDEX_CHANGE_RATE', '')}%",
-            })
-        return records
+
+def _parse_nb_summary(summary: str) -> dict | None:
+    m = _DESC_RE.search(summary)
+    if not m:
+        return None
+    date, total, pct, sh1, sh2, sh3, sha1, sha2, sha3, sz1, sz2, sz3, sza1, sza2, sza3 = m.groups()
+    return {
+        "date": date,
+        "total_amount_亿": float(total),
+        "market_share_pct": float(pct),
+        "shanghai_connect_top3": [
+            {"name": sh1.strip(), "amount_亿": float(sha1)},
+            {"name": sh2.strip(), "amount_亿": float(sha2)},
+            {"name": sh3.strip(), "amount_亿": float(sha3)},
+        ],
+        "shenzhen_connect_top3": [
+            {"name": sz1.strip(), "amount_亿": float(sza1)},
+            {"name": sz2.strip(), "amount_亿": float(sza2)},
+            {"name": sz3.strip(), "amount_亿": float(sza3)},
+        ],
+    }
+
+
+async def fetch_northbound_flow(days: int = 5) -> dict:
+    """Fetch northbound capital flow from EastMoney daily summary articles."""
+    days = min(max(days, 1), 30)
+    url = _NB_LIST_API.format(size=days)
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            # 001=combined northbound, 003=Shenzhen Connect, 005=Shanghai Connect...
-            # Actually: 001=沪股通(northbound SH), 003=深股通(northbound SZ)
-            sh_data = await _fetch_type(client, "001")
-            sz_data = await _fetch_type(client, "003")
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+            resp = await client.get(url, headers={**_UA, "Referer": "https://stock.eastmoney.com/"})
+            resp.raise_for_status()
+            data = resp.json()
     except Exception as e:
-        return {"error": f"Failed to fetch northbound flow: {e}"}
+        return {"error": f"Failed to fetch northbound articles: {e}"}
 
-    # Combine into summary
-    total_deal = sum(r["deal_amount_万"] for r in sh_data) + sum(r["deal_amount_万"] for r in sz_data)
+    articles = (data.get("data") or {}).get("list") or []
+    if not articles:
+        return {"error": "No northbound articles returned", "raw": data}
+
+    collected = []
+    for a in articles:
+        parsed = _parse_nb_summary(a.get("summary", ""))
+        if parsed:
+            parsed["title"] = a.get("title", "")
+            parsed["published"] = a.get("showTime", "")[:10]
+            parsed["url"] = a.get("uniqueUrl", "")
+            collected.append(parsed)
+
+    if not collected:
+        return {"error": "Articles found but summaries did not match expected format", "sample": articles[0] if articles else None}
 
     return {
-        "note": "Net inflow/outflow data discontinued after Aug 2024 due to regulatory changes. Deal volume and count still available.",
-        "period": f"Last {max(len(sh_data), len(sz_data))} trading days",
-        "total_deal_amount": _fmt_yuan(total_deal * 1e4),
-        "shanghai_connect": sh_data,
-        "shenzhen_connect": sz_data,
+        "source": "EastMoney 北向资金动态 (column 399)",
+        "days_found": len(collected),
+        "data": collected,
     }
 
 

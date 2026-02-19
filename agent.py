@@ -9,7 +9,7 @@ import time
 from typing import Callable
 from uuid import UUID
 from openai import AsyncOpenAI
-from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, get_system_prompt
+from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, get_system_prompt, get_planning_prompt
 from tools import TOOL_SCHEMAS, execute_tool
 from accounts import (
     get_active_conversation, get_user_lock,
@@ -216,6 +216,29 @@ async def _run_agent_inner(
                 pass
 
     files = []
+    prev_tool_names: list[str] = []
+
+    # ── Planning turn ─────────────────────────────────────────────────
+    # One tool-free LLM call to resolve intent, map to tools, and surface
+    # data limitations before any execution begins.
+    await _emit("Planning...")
+    planning_messages = messages + [{"role": "user", "content": get_planning_prompt()}]
+    try:
+        plan_resp = await client.chat.completions.create(
+            model=MINIMAX_MODEL,
+            messages=planning_messages,
+            tools=None,
+        )
+        plan_raw = plan_resp.choices[0].message.content or ""
+        for m in re.finditer(r"<think>(.*?)</think>", plan_raw, flags=re.DOTALL):
+            await _emit_thinking("agent_plan", "Research Plan", m.group(1).strip())
+        plan = re.sub(r"<think>.*?</think>\s*", "", plan_raw, flags=re.DOTALL).strip()
+        if plan:
+            await _emit_thinking("agent_plan", "Research Plan", plan)
+            messages.append({"role": "assistant", "content": plan})
+            messages.append({"role": "user", "content": "按照以上计划，现在开始调用工具获取数据。"})
+    except Exception as e:
+        logger.warning(f"Planning turn failed (continuing anyway): {e}")
 
     for turn in range(MAX_TURNS):
         logger.info(f"Agent turn {turn + 1}/{MAX_TURNS}")
@@ -228,25 +251,40 @@ async def _run_agent_inner(
         )
 
         msg = response.choices[0].message
+
+        # Extract and emit <think> blocks from every turn, stripped before they
+        # enter conversation history or the final response text.
+        raw = msg.content or ""
+        thoughts = re.findall(r"<think>(.*?)</think>", raw, flags=re.DOTALL)
+        if thoughts:
+            if turn == 0:
+                think_label = "Turn 1 · Analysis"
+            elif not msg.tool_calls:
+                think_label = f"Turn {turn + 1} · Synthesis"
+            else:
+                tools_str = ", ".join(prev_tool_names) if prev_tool_names else "tools"
+                think_label = f"Turn {turn + 1} · After {tools_str}"
+            for thought in thoughts:
+                await _emit_thinking(f"agent_t{turn + 1}", think_label, thought.strip())
+        clean = re.sub(r"<think>.*?</think>\s*", "", raw, flags=re.DOTALL).strip()
+
         msg_dict = _message_to_dict(msg)
+        if thoughts:
+            msg_dict["content"] = clean  # don't echo <think> tags back to the model
         messages.append(msg_dict)
 
         # Persist assistant message
         await save_message(
-            conv_id, "assistant", msg.content,
+            conv_id, "assistant", clean or msg.content,
             tool_calls=msg_dict.get("tool_calls"),
         )
 
         if not msg.tool_calls:
-            text = msg.content or "I couldn't generate a response."
-            # Extract and emit <think> blocks before stripping
-            for m in re.finditer(r"<think>(.*?)</think>", text, flags=re.DOTALL):
-                await _emit_thinking("agent", "MiniMax Agent", m.group(1).strip())
-            text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
-            return {"text": text, "files": files}
+            return {"text": clean or "I couldn't generate a response.", "files": files}
 
         # Show which tools are running
         tool_names = [tc.function.name for tc in msg.tool_calls]
+        prev_tool_names = tool_names
         await _emit(f"Running: {', '.join(tool_names)}...")
 
         # Make status/thinking/user_id callbacks available to tools via contextvars
@@ -312,7 +350,7 @@ async def _run_agent_inner(
         )
         summary = response.choices[0].message.content or "I reached the maximum number of steps but couldn't generate a summary."
         for m in re.finditer(r"<think>(.*?)</think>", summary, flags=re.DOTALL):
-            await _emit_thinking("agent", "MiniMax Agent", m.group(1).strip())
+            await _emit_thinking("agent_summary", "Summary · Synthesis", m.group(1).strip())
         summary = re.sub(r"<think>.*?</think>\s*", "", summary, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error(f"Summary request failed: {e}")
@@ -421,15 +459,21 @@ def _message_to_dict(msg) -> dict:
     """Convert an OpenAI message object to a serializable dict."""
     d = {"role": msg.role, "content": msg.content or ""}
     if msg.tool_calls:
-        d["tool_calls"] = [
-            {
+        tool_calls = []
+        for tc in msg.tool_calls:
+            args = tc.function.arguments
+            try:
+                json.loads(args)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    f"Tool call '{tc.function.name}' returned invalid JSON args "
+                    f"(id={tc.id}), replacing with {{}}"
+                )
+                args = "{}"
+            tool_calls.append({
                 "id": tc.id,
                 "type": "function",
-                "function": {
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments,
-                },
-            }
-            for tc in msg.tool_calls
-        ]
+                "function": {"name": tc.function.name, "arguments": args},
+            })
+        d["tool_calls"] = tool_calls
     return d

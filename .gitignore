@@ -9,3 +9,5 @@ frontend/dist/
 .claude/
 .running
 eastmoneyforum
+*.pdf
+/tests

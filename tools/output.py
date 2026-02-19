@@ -467,8 +467,35 @@ async def generate_pdf(title: str, content: str) -> dict:
                 pdf.set_font(font_family, "", _BODY_SIZE)
                 _mc(pdf, _BODY_LH, display)
         elif stripped:
-            pdf.set_font(font_family, "", _BODY_SIZE)
-            _mc(pdf, _BODY_LH, display)
+            # Check for images: ![alt](path)
+            img_match = re.match(r"^!\[(.*?)\]\((.*?)\)$", stripped)
+            if img_match:
+                img_path = img_match.group(2)
+                # Verify path exists
+                if os.path.exists(img_path):
+                    try:
+                        pdf.ln(4)
+                        # Render image centered, full width
+                        pdf.image(img_path, x=pdf.l_margin, w=pdf.w - pdf.l_margin - pdf.r_margin)
+                        pdf.ln(4)
+                        # Optional: Render caption
+                        caption = img_match.group(1)
+                        if caption:
+                            # Use regular font instead of Italic to avoid CJK font issues
+                            pdf.set_font(font_family, "", 9)
+                            pdf.set_text_color(*_CLR_MUTED)
+                            pdf.cell(0, 5, caption, align="C")
+                            pdf.ln(6)
+                    except Exception as e:
+                        print(f"Failed to add image {img_path}: {e}")
+                else:
+                    pdf.set_font(font_family, "I", 9)
+                    pdf.set_text_color(200, 50, 50)
+                    pdf.cell(0, 5, f"[Image not found: {img_path}]")
+                    pdf.ln()
+            else:
+                pdf.set_font(font_family, "", _BODY_SIZE)
+                _mc(pdf, _BODY_LH, display)
         else:
             pdf.ln(3)
         i += 1

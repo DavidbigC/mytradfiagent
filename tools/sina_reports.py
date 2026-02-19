@@ -28,7 +28,11 @@ FETCH_COMPANY_REPORT_SCHEMA = {
             "Fetch the latest financial report for a Chinese A-share company from Sina Finance. "
             "Returns the report content (key financial sections) and PDF download link. "
             "Use this to analyze a company's actual financial filings — income statement, "
-            "balance sheet, cash flow, business overview, etc."
+            "balance sheet, cash flow, business overview, etc. "
+            "IMPORTANT: Always pass focus_keywords based on what the user is asking about. "
+            "E.g. for bank analysis: ['不良率', '净息差', '拨备覆盖率', '资产质量', '贷款']; "
+            "for tech companies: ['研发', '毛利率', '用户', '增长']; "
+            "for retail: ['同店', '库存', '门店', '毛利']."
         ),
         "parameters": {
             "type": "object",
@@ -41,6 +45,16 @@ FETCH_COMPANY_REPORT_SCHEMA = {
                     "type": "string",
                     "enum": ["yearly", "q1", "mid", "q3"],
                     "description": "Report type: yearly=年报, q1=一季报, mid=中报, q3=三季报",
+                },
+                "focus_keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Keywords derived from the user's question to focus extraction on. "
+                        "These are merged with base financial markers. Pass terms the user "
+                        "explicitly asked about, e.g. ['不良率', '净息差', '拨备覆盖率'] for "
+                        "bank asset quality analysis."
+                    ),
                 },
             },
             "required": ["stock_code", "report_type"],
@@ -112,7 +126,7 @@ def _parse_bulletin_list(html: str) -> list[dict]:
     return reports
 
 
-def _extract_key_sections(text: str) -> str:
+def _extract_key_sections(text: str, extra_keywords: list[str] | None = None) -> str:
     """Extract key financial sections from a long report text.
 
     Focuses on: financial highlights, income statement, balance sheet summary,
@@ -135,7 +149,16 @@ def _extract_key_sections(text: str) -> str:
         "利息净收入", "手续费", "佣金", "投资收益",
         "经营情况讨论与分析", "管理层讨论",
         "行业格局", "竞争", "市场地位",
+        # Bank-specific metrics
+        "不良贷款", "不良率", "净息差", "拨备覆盖率", "拨贷比",
+        "贷款总额", "存款总额", "贷款余额", "存款余额",
+        "资产质量", "核心一级资本", "资本充足率",
+        "净利息收入", "净利差", "利息支出", "利息收入",
+        "信用减值", "贷款减值", "拨备计提",
     ]
+
+    if extra_keywords:
+        section_markers = section_markers + [k for k in extra_keywords if k not in section_markers]
 
     lines = text.split("\n")
     kept_lines = []
@@ -272,7 +295,7 @@ async def fetch_sina_profit_statement(stock_code: str, year: int | None = None) 
     }
 
 
-async def fetch_company_report(stock_code: str, report_type: str) -> dict:
+async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
     """Fetch the latest financial report for a Chinese A-share company."""
     code = stock_code.strip()
     if len(code) != 6 or not code.isdigit():
@@ -341,7 +364,7 @@ async def fetch_company_report(stock_code: str, report_type: str) -> dict:
             full_text += f"\n--- Table {i+1} ---\n{t}\n"
 
     # Extract key sections
-    key_content = _extract_key_sections(full_text)
+    key_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
 
     # Extract PDF link
     pdf_link = _extract_pdf_link(detail_html)

@@ -1,5 +1,94 @@
 # Changes
 
+## 2026-02-19 — Fix 400 bad request on invalid tool call JSON args
+
+**What:** MiniMax occasionally returns tool calls with malformed JSON arguments. `_message_to_dict` was storing them raw into conversation history, causing a 400 on the next API call.
+
+**Files:**
+- `agent.py` — sanitize `tc.function.arguments` in `_message_to_dict` before adding to history
+
+**Details:**
+- `_execute_single_tool` already caught bad JSON (fell back to `{}`), but the raw bad string still got written into `msg_dict["tool_calls"]`
+- Fix: `json.loads()` validation in `_message_to_dict`; replaces invalid args with `"{}"` and logs a warning
+
+## 2026-02-19 — Lean system prompt + planning turn
+
+**What:** Replaced the bloated routing-rule system prompt with a lean persona/style/citations prompt (~290 words) plus a dedicated `get_planning_prompt()`. Added a planning turn at the start of every agent run that forces intent resolution and tool mapping before any execution.
+
+**Files:**
+- `config.py` — rewrote `get_system_prompt()` (290 words, down from ~1700); added `get_planning_prompt()` with tool capability table and data availability notes
+- `agent.py` — added planning turn before main loop; imports `get_planning_prompt`
+
+**Details:**
+- System prompt cut ~83% (1700 → 290 words): removed tool priority list, all routing rules, efficiency rules, step-by-step examples — all moved into the planning prompt
+- Planning turn: one tool-free LLM call that produces a research plan (intent, term resolution, tool mapping, data limits, parallel groups); plan injected into context + emitted as "Research Plan" thinking block
+- Planning failures are non-fatal (logged, agent continues)
+- Turn 0 label changed from "Turn 1 · Planning" to "Turn 1 · Analysis" since planning is now separate
+
+## 2026-02-19 — Add 国家队/聪明钱 routing to system prompt
+
+**What:** Added a dedicated routing block for "smart money" queries so the agent maps ambiguous terms (国家队, 汇金, 证金) to the correct tools and data sources before calling anything.
+
+**Files:**
+- `config.py` — added "Smart money / 聪明钱 / 国家队" routing section
+
+**Details:**
+- Root cause: agent had no routing for 国家队 → fell back to web_search → returned news fluff
+- Fix: explicit lookup table mapping each term (北向资金/国家队/主力) to its tool and data frequency
+- 国家队 route: fetch_top_shareholders in parallel on 5 known ETFs + 4 large-cap bank stocks; look for 中央汇金/证金公司 in holder names and compare period changes
+- Agent must state quarterly disclosure lag when reporting 国家队 data
+
+## 2026-02-19 — Fix system prompt northbound flow description
+
+**What:** Updated `config.py` system prompt to remove stale "discontinued" notes that caused the agent to skip calling `fetch_northbound_flow` entirely.
+
+**Files:**
+- `config.py` — updated tool description and routing rule for `fetch_northbound_flow`
+
+**Details:**
+- Old text said "net inflow data discontinued" → agent concluded data unavailable and didn't call the tool
+- New text reflects article-scraping capability and adds "ALWAYS call this tool"
+
+## 2026-02-19 — Fix northbound flow via EastMoney article listing API
+
+**What:** Replaced the broken `RPT_MUTUAL_DEAL_HISTORY` API with the EastMoney article listing API (column 399 = 北向资金动态), which returns daily summaries with full structured data in each article's `summary` field.
+
+**Files:**
+- `tools/cn_capital_flow.py` — replaced implementation; single API call returns N days of data
+
+**Details:**
+- Discovered API endpoint from the page's embedded JS vars: `np-listapi.eastmoney.com/comm/web/getNewsByColumns?column=399&biz=web_stock&client=web&req_trace=nb`
+- Each article `summary` contains: total 北向 volume (亿), market share %, top-3 stocks for 沪股通 + 深股通 with exact amounts
+- Parsed with regex into structured JSON; no per-article fetching needed
+- Default `days=5`, max 30
+
+## 2026-02-19 — Show per-turn agent thinking in regular conversations
+
+**What:** Extended thinking block emission to every agent loop iteration (not just the final response), with per-turn unique sources and contextual labels so each thinking step shows as a separate collapsible block.
+
+**Files:**
+- `agent.py` — refactored think-extraction to run on every turn; added per-turn source IDs and labels
+
+**Details:**
+- Previously: `<think>` tags only extracted on the final no-tool-call turn; all used source `"agent"` so they merged
+- Now: extracted from every LLM response before appending to conversation history
+- Source is `agent_t{turn+1}` (unique per turn) so frontend shows them as separate blocks
+- Labels: "Turn 1 · Planning", "Turn N · After {tool_names}", "Turn N · Synthesis"
+- `<think>` content also stripped from `msg_dict["content"]` before it re-enters the message history, so the model doesn't see its own think tags on the next turn
+
+## 2026-02-19 — Dynamic keyword extraction for fetch_company_report
+
+**What:** Made `fetch_company_report` accept optional `focus_keywords` that the LLM passes based on the user's question, so report extraction adapts to any domain rather than relying solely on hardcoded markers.
+
+**Files:**
+- `tools/sina_reports.py` — added `focus_keywords` param to schema, `fetch_company_report`, and `_extract_key_sections`
+
+**Details:**
+- `focus_keywords` (optional array) is merged with base section markers at extraction time
+- Tool description instructs the LLM to always derive and pass keywords from the user's question
+- Also added bank-specific base markers (不良率, 净息差, 拨备覆盖率, etc.) as a sensible default for bank stocks
+- No extra planning round-trip needed — LLM already has user intent when calling the tool
+
 ## 2026-02-19 — Community sentiment via 股吧 integrated into agent flows
 
 **What:** Integrated 股吧 community sentiment into both the debate system and the main agent's deep analysis workflow. Uses scrape_webpage on guba.eastmoney.com (no auth required). Xueqiu was tested and found to be WAF-blocked without session cookies, so dropped. Also fixed missing playwright/JS-domain definitions in web.py.
