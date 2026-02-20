@@ -807,3 +807,29 @@
 - `_CHAPTER_HEADING_RE` matches chapter headings in body text (available for future use)
 - `_parse_toc()` scans the first 400 lines; returns `[]` when no TOC is detected (callers treat that as "no filter")
 - Unknown chapters default to keep (True) to avoid accidental data loss
+
+## 2026-02-20 — Add TOC-based section filter for report pre-processing
+
+**What:** Added `_filter_sections_by_toc()` to `tools/sina_reports.py` to physically remove skip-chapters from report text using TOC-detected chapter boundaries.
+
+**Files:**
+- `tools/sina_reports.py` — modified (added `_filter_sections_by_toc` immediately after `_parse_toc`)
+
+**Details:**
+- Scans body lines from position 50 onwards to skip the TOC block itself
+- Matches chapter headings via `_CHAPTER_HEADING_RE` and looks up keep/skip status from the parsed chapters list using the first 6 chars of each chapter name
+- Collects kept chapter blocks into a result list; falls back to full original text if no boundaries found or if input is large (>10000 chars) and filtered output is suspiciously small (<1000 chars)
+- Safety threshold uses `len(text) > 10000 and len(filtered) < 1000` so small/test inputs are not incorrectly fallen back
+
+## 2026-02-20 — Integrate TOC-based pre-filter into _prepare_for_grok
+
+**What:** Wired `_parse_toc()` and `_filter_sections_by_toc()` as Step 1 in `_prepare_for_grok()`, so skip-chapters (重要提示, 公司治理, 环境社会责任, etc.) are dropped before deduplication and keyword extraction.
+
+**Files:**
+- `tools/sina_reports.py` — modified (_prepare_for_grok body replaced)
+
+**Details:**
+- New Step 1 calls `_parse_toc(full_text)`; if chapters are found, calls `_filter_sections_by_toc()` and logs the character reduction percentage and chapter count
+- If no TOC is detected, falls back to full text with an info log message
+- Step 2 (deduplication) and Step 3 (keyword-section extraction + hard cap) are unchanged in logic, but now operate on already-filtered text
+- TOC filtering typically removes 40–60% of annual report text before the remaining steps run

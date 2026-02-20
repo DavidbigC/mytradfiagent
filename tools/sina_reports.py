@@ -413,19 +413,32 @@ def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, m
     """Reduce token cost before sending to Grok without losing financial data.
 
     Steps:
-    1. Drop short noise lines (< 4 chars: page numbers, separators, single chars).
-    2. Deduplicate lines — repeated table headers / company name / date stamps
-       account for ~34% of lines in typical Sina Finance reports.
+    1. Parse TOC and drop skip-chapters (重要提示, 公司治理, 环境社会责任, etc.)
+       This alone typically removes 40–60% of text from annual reports.
+    2. Deduplicate lines (repeated headers, company names, date stamps).
     3. If still over max_chars, apply keyword-section extraction then hard-cap.
-    Financial numbers only need to appear once for Grok to read them correctly.
     """
+    # Step 1: TOC-based section filter
+    chapters = _parse_toc(full_text)
+    if chapters:
+        text = _filter_sections_by_toc(full_text, chapters)
+        logger.info(
+            f"TOC filter: {len(full_text):,} → {len(text):,} chars "
+            f"({100 - len(text) * 100 // max(len(full_text), 1)}% reduction, "
+            f"{len(chapters)} chapters parsed)"
+        )
+    else:
+        text = full_text
+        logger.info("TOC not detected — using full text")
+
+    # Step 2: Deduplicate lines
     seen: set[str] = set()
     deduped: list[str] = []
-    for line in full_text.split("\n"):
+    for line in text.split("\n"):
         s = line.strip()
-        if len(s) < 4:        # skip noise
+        if len(s) < 4:
             continue
-        if s in seen:         # skip exact duplicates
+        if s in seen:
             continue
         seen.add(s)
         deduped.append(s)
@@ -435,12 +448,11 @@ def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, m
     if len(text) <= max_chars:
         return text
 
-    # Still too long (common for 年报): keyword-section extraction then hard cap
+    # Step 3: Keyword-section extraction + hard cap (fallback for very long reports)
     filtered = _extract_key_sections(text, extra_keywords=focus_keywords)
     if len(filtered) > max_chars:
         filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
     return filtered
-
 
 async def _grok_summarize_report(
     full_text: str,
