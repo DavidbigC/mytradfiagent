@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store";
 import { useT } from "../i18n";
 import AdminPanel from "./AdminPanel";
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose }: Props) {
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useT();
   const [showAdmin, setShowAdmin] = useState(false);
@@ -55,6 +57,47 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
               </button>
             </div>
           ))}
+        </div>
+
+        <div className="sidebar-links" style={{ padding: "0 16px 16px 16px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            onClick={() => navigate("/guidance")}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              textAlign: "left",
+              padding: "8px 0",
+              cursor: "pointer",
+              fontSize: "0.9rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px"
+            }}
+            onMouseOver={(e) => e.currentTarget.style.color = "var(--accent)"}
+            onMouseOut={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
+          >
+            📚 {t("sidebar.guide") || "User Guide"}
+          </button>
+          <button
+            onClick={() => navigate("/showcase")}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              textAlign: "left",
+              padding: "8px 0",
+              cursor: "pointer",
+              fontSize: "0.9rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px"
+            }}
+            onMouseOver={(e) => e.currentTarget.style.color = "var(--accent)"}
+            onMouseOut={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
+          >
+            ✨ {t("sidebar.showcase") || "Agent Showcase"}
+          </button>
         </div>
 
         <div className="sidebar-footer">

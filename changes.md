@@ -1,5 +1,19 @@
 # Changes
 
+## 2026-02-19 — Frontend reconnect for background agent runs
+
+**What:** Added auto-reconnect logic so the UI reattaches to an in-progress agent run after a network drop or app backgrounding.
+
+**Files:**
+- `frontend/src/api.ts` — extracted `_readSSEStream` helper; added `fetchActiveRun` and `subscribeStream` exports
+- `frontend/src/components/ChatView.tsx` — added `reconnect` callback, mount effect, and `visibilitychange` effect
+
+**Details:**
+- `fetchActiveRun(token)` calls `GET /api/chat/active` to check if an agent run is in progress for the user
+- `subscribeStream(token, callbacks)` calls `GET /api/chat/stream` to replay buffered events and stream new ones; returns 404 → `NO_ACTIVE_RUN` error handled silently
+- `reconnect` guard: skips if already `sending`, skips if active run belongs to a different conversation
+- Triggered on: initial mount (token available) and `document.visibilitychange → visible`
+
 ## 2026-02-19 — Fix 400 bad request on invalid tool call JSON args
 
 **What:** MiniMax occasionally returns tool calls with malformed JSON arguments. `_message_to_dict` was storing them raw into conversation history, causing a 400 on the next API call.

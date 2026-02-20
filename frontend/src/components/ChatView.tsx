@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../store";
 import { useT } from "../i18n";
-import { sendMessage, fetchMessages } from "../api";
+import { sendMessage, fetchMessages, fetchActiveRun, subscribeStream } from "../api";
 import MessageBubble, { ThinkingData } from "./MessageBubble";
 import StatusIndicator from "./StatusIndicator";
 import ThinkingBlock from "./ThinkingBlock";
@@ -114,6 +114,78 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
+
+  // Reconnect to an in-progress agent run (survives network drops / app backgrounding)
+  const reconnect = useCallback(async () => {
+    if (!token || sending) return;
+    try {
+      const active = await fetchActiveRun(token);
+      if (!active.running) return;
+      // Only attach if this is our conversation (or we haven't loaded one yet)
+      if (active.conversation_id && conversationId && active.conversation_id !== conversationId) return;
+
+      setSending(true);
+      setStatus(t("chat.connecting"));
+      setThinkingBlocks([]);
+      thinkingBlocksRef.current = [];
+
+      abortRef.current = subscribeStream(token, {
+        onStatus: (text) => setStatus(text),
+        onThinking: (data) => {
+          setThinkingBlocks((prev) => {
+            const existing = prev.find((tb) => tb.source === data.source);
+            let next: ThinkingData[];
+            if (existing) {
+              next = prev.map((tb) =>
+                tb.source === data.source ? { ...tb, content: tb.content + "\n" + data.content } : tb
+              );
+            } else {
+              next = [...prev, data];
+            }
+            thinkingBlocksRef.current = next;
+            return next;
+          });
+        },
+        onDone: (data) => {
+          const attachedThinking = thinkingBlocksRef.current.length > 0 ? thinkingBlocksRef.current : undefined;
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: data.text, files: data.files, references: data.references, thinking: attachedThinking },
+          ]);
+          setThinkingBlocks([]);
+          thinkingBlocksRef.current = [];
+          setStatus(null);
+          setSending(false);
+          onConversationCreated?.();
+        },
+        onError: (error) => {
+          if (error === "UNAUTHORIZED") { logout(); return; }
+          if (error === "NO_ACTIVE_RUN") { setStatus(null); setSending(false); return; }
+          setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${error}` }]);
+          setThinkingBlocks([]);
+          thinkingBlocksRef.current = [];
+          setStatus(null);
+          setSending(false);
+        },
+      });
+    } catch (err: any) {
+      if (err.message === "UNAUTHORIZED") logout();
+    }
+  }, [token, sending, conversationId, t, onConversationCreated, logout]);
+
+  // Check for an in-progress run when we first have a token (page load / login)
+  useEffect(() => {
+    reconnect();
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-check when the tab becomes visible again (handles mobile network drops)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") reconnect();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [reconnect]);
 
   // Auto-start debate when pendingDebate is set and conversation is ready
   useEffect(() => {

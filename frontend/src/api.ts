@@ -148,6 +148,50 @@ export interface SSECallbacks {
   onThinking?: (data: { source: string; label: string; content: string }) => void;
 }
 
+async function _readSSEStream(res: Response, callbacks: SSECallbacks) {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    let currentEvent = "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (currentEvent === "thinking") {
+          if (callbacks.onThinking) {
+            try { callbacks.onThinking(JSON.parse(data)); } catch { /* ignore malformed */ }
+          }
+        } else if (currentEvent === "status") {
+          callbacks.onStatus(data);
+        } else if (currentEvent === "done") {
+          try {
+            callbacks.onDone(JSON.parse(data));
+          } catch {
+            callbacks.onDone({ text: data, files: [], references: [] });
+          }
+        } else if (currentEvent === "error") {
+          try {
+            const parsed = JSON.parse(data);
+            callbacks.onError(parsed.error || data);
+          } catch {
+            callbacks.onError(data);
+          }
+        }
+      }
+    }
+  }
+}
+
 export function sendMessage(
   token: string,
   message: string,
@@ -164,65 +208,41 @@ export function sendMessage(
     signal: controller.signal,
   })
     .then(async (res) => {
-      if (res.status === 401) {
-        callbacks.onError("UNAUTHORIZED");
-        return;
-      }
-      if (!res.ok) {
-        callbacks.onError(`HTTP ${res.status}`);
-        return;
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (currentEvent === "thinking") {
-              if (callbacks.onThinking) {
-                try {
-                  callbacks.onThinking(JSON.parse(data));
-                } catch {
-                  // ignore malformed thinking events
-                }
-              }
-            } else if (currentEvent === "status") {
-              callbacks.onStatus(data);
-            } else if (currentEvent === "done") {
-              try {
-                callbacks.onDone(JSON.parse(data));
-              } catch {
-                callbacks.onDone({ text: data, files: [], references: [] });
-              }
-            } else if (currentEvent === "error") {
-              try {
-                const parsed = JSON.parse(data);
-                callbacks.onError(parsed.error || data);
-              } catch {
-                callbacks.onError(data);
-              }
-            }
-          }
-        }
-      }
+      if (res.status === 401) { callbacks.onError("UNAUTHORIZED"); return; }
+      if (!res.ok) { callbacks.onError(`HTTP ${res.status}`); return; }
+      await _readSSEStream(res, callbacks);
     })
     .catch((err) => {
-      if (err.name !== "AbortError") {
-        callbacks.onError(err.message);
-      }
+      if (err.name !== "AbortError") callbacks.onError(err.message);
+    });
+
+  return controller;
+}
+
+// --- Active Run / Reconnect ---
+
+export async function fetchActiveRun(token: string): Promise<{ running: boolean; conversation_id: string | null }> {
+  const res = await fetch(`${BASE}/api/chat/active`, { headers: headers(token) });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to check active run");
+  return res.json();
+}
+
+export function subscribeStream(token: string, callbacks: SSECallbacks): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${BASE}/api/chat/stream`, {
+    headers: headers(token),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (res.status === 401) { callbacks.onError("UNAUTHORIZED"); return; }
+      if (res.status === 404) { callbacks.onError("NO_ACTIVE_RUN"); return; }
+      if (!res.ok) { callbacks.onError(`HTTP ${res.status}`); return; }
+      await _readSSEStream(res, callbacks);
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") callbacks.onError(err.message);
     });
 
   return controller;

@@ -16,6 +16,8 @@ const translations = {
   "sidebar.delete": { en: "Delete", zh: "删除" },
   "sidebar.admin": { en: "Admin", zh: "管理" },
   "sidebar.logout": { en: "Logout", zh: "退出" },
+  "sidebar.guide": { en: "User Guide", zh: "用户指南" },
+  "sidebar.showcase": { en: "Agent Showcase", zh: "能力展示" },
 
   // Chat
   "chat.title": { en: "Financial Research Agent", zh: "金融研究智能体" },
@@ -77,7 +79,7 @@ interface LangState {
 
 const LangContext = createContext<LangState>({
   lang: "zh",
-  setLang: () => {},
+  setLang: () => { },
   t: (key) => key,
 });
 

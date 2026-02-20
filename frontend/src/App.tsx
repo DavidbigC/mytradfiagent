@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./store";
 import LoginPage from "./pages/LoginPage";
 import ChatLayout from "./pages/ChatLayout";
+import GuidancePage from "./pages/GuidancePage";
+import ShowcasePage from "./pages/ShowcasePage";
 
 export default function App() {
   const { token } = useAuth();
@@ -10,6 +12,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/" /> : <LoginPage />} />
       <Route path="/*" element={token ? <ChatLayout /> : <Navigate to="/login" />} />
+      <Route path="/guidance" element={token ? <GuidancePage /> : <Navigate to="/login" />} />
+      <Route path="/showcase" element={token ? <ShowcasePage /> : <Navigate to="/login" />} />
     </Routes>
   );
 }
