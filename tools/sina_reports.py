@@ -228,6 +228,7 @@ _SKIP_CHAPTER_KEYWORDS = [
     "优先股",
     "债券相关",
     "股份变动", "股东情况",
+    "致辞", "致词",  # board/president speeches (e.g. 董事会致辞, 行长致辞)
 ]
 
 
@@ -313,13 +314,25 @@ async def _save_report_cache(
         logger.warning(f"Cache DB write failed: {e}")
 
 
-# Regex to match TOC entries like "第三节 管理层讨论与分析 ...... 19"
+# Regex to match TOC entries with 第X章/节 prefix.
+# NOTE: real reports have NO space between 章/节 and the title:
+#   "第一章公司简介 ...... 9"  (not "第一章 公司简介 ...... 9")
+# So \s* (zero or more) is required here, not \s+.
 _TOC_ENTRY_RE = re.compile(
-    r"^第[一二三四五六七八九十百]+[章节]\s+(.+?)[\s\.·。…]+\d+\s*$"
+    r"^第[一二三四五六七八九十百]+[章节]\s*(.+?)[\s\.·。…]+\d+\s*$"
 )
 
-# Regex to detect chapter headings in the body text
-_CHAPTER_HEADING_RE = re.compile(r"^第[一二三四五六七八九十百]+[章节][\s\u3000]")
+# Regex to match plain TOC entries without 第X章 prefix, within the 目录 block.
+# e.g. "重要提示 ...... 1", "董事会致辞 ...... 5", "行长致辞 ...... 7"
+# Excludes sub-entries starting with Chinese numerals (一、二、) or brackets (（一）).
+_TOC_PLAIN_ENTRY_RE = re.compile(
+    r"^([^\d\s（(一二三四五六七八九十].{1,25}?)[\s\.·。…]{3,}\d+\s*$"
+)
+
+# Regex to detect chapter headings in the body text.
+# NOTE: same no-space format as TOC — "第一章公司简介" not "第一章 公司简介".
+# Match any line starting with 第X章 or 第X节 (space after is optional).
+_CHAPTER_HEADING_RE = re.compile(r"^第[一二三四五六七八九十百]+[章节]")
 
 
 def _should_keep_chapter(name: str) -> bool:
@@ -336,20 +349,57 @@ def _should_keep_chapter(name: str) -> bool:
 
 
 def _parse_toc(text: str) -> list[dict]:
-    """Parse the table of contents from the first 400 lines of a report.
+    """Parse the table of contents from a report.
 
-    Returns a list of {'name': str, 'keep': bool} for each chapter found.
-    Returns [] if no TOC is detected (safe — callers treat [] as "no filter").
+    Strategy:
+    1. Find the '目录' marker in the first 600 lines to anchor the TOC block.
+    2. Parse up to 120 lines after the marker using two patterns:
+       - 第X章/节 entries (e.g. "第一章公司简介 ...... 9")
+       - Plain entries without prefix (e.g. "重要提示 ...... 1",
+         "董事会致辞 ...... 5") — only when the 目录 anchor was found
+    3. If no 目录 marker found, fall back to scanning the first 400 lines
+       with just the 第X章/节 pattern.
+
+    Returns [] if nothing is detected (callers treat [] as "no filter").
     """
+    lines = text.split("\n")
+
+    # Step 1: Find the 目录 marker
+    toc_start = -1
+    for i, line in enumerate(lines[:600]):
+        stripped = line.strip()
+        if stripped in ("目录", "目  录", "目   录"):
+            toc_start = i + 1
+            break
+
+    # Step 2: Choose search range
+    if toc_start >= 0:
+        search_lines = lines[toc_start: toc_start + 120]
+        use_plain = True
+    else:
+        search_lines = lines[:400]
+        use_plain = False
+
     chapters = []
-    for line in text.split("\n")[:400]:
-        m = _TOC_ENTRY_RE.match(line.strip())
-        if not m:
+    for line in search_lines:
+        stripped = line.strip()
+        if not stripped:
             continue
-        name = m.group(1).strip()
-        # Strip trailing punctuation noise
-        name = re.sub(r"[\s（(）)、，,。\.…·]+$", "", name)
-        chapters.append({"name": name, "keep": _should_keep_chapter(name)})
+
+        # Pattern 1: 第X章/节 entries
+        m = _TOC_ENTRY_RE.match(stripped)
+        if m:
+            name = re.sub(r"[\s（(）)、，,。\.…·]+$", "", m.group(1).strip())
+            chapters.append({"name": name, "keep": _should_keep_chapter(name)})
+            continue
+
+        # Pattern 2: plain entries (only within an anchored 目录 block)
+        if use_plain:
+            m2 = _TOC_PLAIN_ENTRY_RE.match(stripped)
+            if m2:
+                name = m2.group(1).strip()
+                chapters.append({"name": name, "keep": _should_keep_chapter(name)})
+
     return chapters
 
 
