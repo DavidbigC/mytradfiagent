@@ -462,7 +462,8 @@ async def _grok_summarize_report(
 ) -> str | None:
     """Preprocess report text then summarize with Grok.
 
-    Returns None if Grok is unavailable or the call fails.
+    Returns a structured Markdown string suitable for caching, or None on failure.
+    Output includes both Grok narrative AND preserved financial tables (Option B).
     """
     if not _grok_client:
         logger.warning("Grok client not initialised (GROK_API_KEY missing?) — falling back to keyword extraction")
@@ -471,28 +472,46 @@ async def _grok_summarize_report(
     grok_input = _prepare_for_grok(full_text, focus_keywords)
     logger.info(
         f"Grok input: {len(full_text):,} → {len(grok_input):,} chars "
-        f"({100 - len(grok_input)*100//len(full_text)}% reduction)"
+        f"({100 - len(grok_input) * 100 // max(len(full_text), 1)}% reduction)"
     )
 
     focus_note = ""
     if focus_keywords:
-        focus_note = f"\n请特别关注以下指标：{', '.join(focus_keywords)}"
+        focus_note = f"\n**重点关注指标**：{', '.join(focus_keywords)}"
 
     system = (
-        "你是一名专业的卖方金融分析师。请阅读以下中文财务报告全文，用中文撰写结构化摘要。"
-        "格式：Markdown，关键数据用表格，数字精确，注明所属报告期。不要省略关键财务数据。"
+        "你是一名专业的卖方金融分析师。请仔细阅读以下中文财务报告，输出结构化的Markdown分析报告。"
+        "要求：数字精确，注明报告期，关键财务表格必须以Markdown表格格式完整保留。"
+        "不要省略任何财务数据、比率或管理层提到的具体数字。"
     )
+
     prompt = (
-        f"报告：{title}（{report_type_cn}）{focus_note}\n\n"
-        "请提取并整理：\n"
-        "1. 核心财务指标（营收、净利润、EPS 及同比变化）\n"
-        "2. 资产负债摘要（总资产、净资产、关键比率）\n"
-        "3. 现金流摘要\n"
-        "4. 业务分部/分行业收入结构（如有）\n"
-        "5. 主要风险或重要变化\n"
-        "6. **值得关注的亮点或异常**：从整份报告中找出最值得深入研究的2–4个发现。"
-        "可以是：超预期或低于预期的指标、趋势转折点、管理层措辞变化、隐藏的风险、"
-        "与行业对比后的异常、值得跟进的潜在机会。用简洁的中文列出，每条注明数据依据。\n\n"
+        f"**报告**：{title}（{report_type_cn}）{focus_note}\n\n"
+        "## 阅读策略\n"
+        "本报告文本已按中国上市公司年报/季报标准格式预处理，仅保留财务相关章节：\n"
+        "- **已保留**：主要财务指标、管理层讨论与分析、财务报告、业务综述、风险管理\n"
+        "- **已过滤**：重要提示、公司简介、公司治理、环境社会责任、重要事项等非财务章节\n\n"
+        "## 请按以下结构输出Markdown报告\n\n"
+        "### 一、核心财务指标\n"
+        "用表格列出：营业收入、净利润（归母）、基本EPS、ROE、总资产、净资产，"
+        "以及各项与上期的同比变化（%）。\n\n"
+        "### 二、管理层讨论与分析摘要\n"
+        "- **总体经营情况**（含具体数字，2–3段）\n"
+        "- **分业务/分行业收入结构**：完整保留原始数据表格（Markdown表格格式）\n"
+        "- **管理层重点关注问题**：逐条列出管理层在报告中明确提及的重点问题\n\n"
+        "### 三、财务报表关键数据\n"
+        "完整保留以下数据表格（Markdown表格格式，不要简化）：\n"
+        "- 利润表主要项目（营收、毛利、期间费用、净利润）\n"
+        "- 资产负债表关键项目（总资产、总负债、净资产、主要负债结构）\n"
+        "- 现金流量表摘要（经营/投资/融资活动净现金流）\n"
+        "- 行业特定指标（如银行：不良贷款率、净息差、拨备覆盖率、资本充足率；"
+        "零售：同店销售、库存周转；房地产：去化率、土储等）\n\n"
+        "### 四、风险因素\n"
+        "列出管理层在报告中披露的主要风险（逐条，注明原文依据）。\n\n"
+        "### 五、亮点与异常发现\n"
+        "从报告中找出2–4个最值得深入研究的发现。可以是：超预期或低于预期的指标、"
+        "趋势转折点、管理层措辞变化、隐藏风险、与行业对比后的异常。"
+        "每条注明具体数据依据。\n\n"
         f"以下是报告内容：\n\n{grok_input}"
     )
 
