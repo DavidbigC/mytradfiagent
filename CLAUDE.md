@@ -1,5 +1,9 @@
 # Project Guidelines
 
+## Architecture Reference
+
+Before writing any code, read `structure.md` in the project root. It documents every module, the full request/response flows for both agent and debate modes, all tool files and their data sources, key constants, and common gotchas. Reading it means you will not need to open most source files just to understand how the system fits together.
+
 ## Change Log
 
 After completing every task, append a summary to `changes.md` in the project root. Each entry should include:

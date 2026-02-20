@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-02-20 — Add structure.md architecture reference
+
+**What:** Created a comprehensive architecture document so future coding agents can understand the full system without reading every source file.
+
+**Files:**
+- `structure.md` — created (full architecture reference)
+- `CLAUDE.md` — modified (added instruction to read structure.md before writing code)
+
 ## 2026-02-20 — Stop button now cancels server-side agent task
 
 **What:** The Stop button now sends a `POST /api/chat/stop` request that cancels the background asyncio task, so the agent actually stops running rather than just disconnecting the SSE stream.
