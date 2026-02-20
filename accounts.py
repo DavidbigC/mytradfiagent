@@ -120,6 +120,71 @@ async def save_message(
         )
 
 
+def _repair_tool_call_sequence(messages: list[dict]) -> list[dict]:
+    """Remove incomplete or orphaned tool-call sequences from a message list.
+
+    Two failure modes that cause MiniMax error 2013:
+    1. role:tool message with no preceding role:assistant that has tool_calls
+       (e.g. window starts mid-sequence, or the assistant row was trimmed away)
+    2. role:assistant with tool_calls but no following role:tool results
+       (e.g. agent was stopped after saving the assistant row but before results)
+
+    Both are dropped with a warning. Better to lose context than to crash.
+    """
+    result: list[dict] = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            # Collect the expected tool-call IDs from this assistant message.
+            tool_calls = msg["tool_calls"]
+            expected_ids: set[str] = {
+                tc["id"]
+                for tc in tool_calls
+                if isinstance(tc, dict) and tc.get("id")
+            }
+
+            # Look ahead: collect consecutive role:tool messages that follow.
+            j = i + 1
+            following_tools: list[dict] = []
+            while j < len(messages) and messages[j].get("role") == "tool":
+                following_tools.append(messages[j])
+                j += 1
+
+            found_ids: set[str] = {
+                m.get("tool_call_id", "")
+                for m in following_tools
+                if m.get("tool_call_id")
+            }
+
+            if expected_ids and expected_ids != found_ids:
+                # Incomplete sequence — drop assistant row + any partial results.
+                logger.warning(
+                    f"Dropping incomplete tool-call sequence "
+                    f"(expected {expected_ids}, found {found_ids})"
+                )
+                i = j  # skip past the assistant row and any partial tool rows
+            else:
+                # Complete (or no IDs to match) — keep everything.
+                result.append(msg)
+                result.extend(following_tools)
+                i = j
+
+        elif msg.get("role") == "tool":
+            # Orphaned tool result — no preceding assistant-with-tool-calls.
+            logger.warning(
+                f"Dropping orphaned tool result (tool_call_id={msg.get('tool_call_id')})"
+            )
+            i += 1
+
+        else:
+            result.append(msg)
+            i += 1
+
+    return result
+
+
 async def load_recent_messages(conversation_id: UUID, limit: int = 20) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -142,17 +207,7 @@ async def load_recent_messages(conversation_id: UUID, limit: int = 20) -> list[d
             msg["tool_call_id"] = row["tool_call_id"]
         messages.append(msg)
 
-    # Trim orphaned tool results from the front.
-    # If our window starts mid-sequence (e.g. tool results without the
-    # preceding assistant tool_call message), the API will reject it.
-    # Skip until we hit a 'user' or plain 'assistant' (no tool_call_id) message.
-    while messages and (
-        messages[0].get("role") == "tool"
-        or (messages[0].get("role") == "assistant" and messages[0].get("tool_calls"))
-    ):
-        messages.pop(0)
-
-    return messages
+    return _repair_tool_call_sequence(messages)
 
 
 async def get_conversation_summary(conversation_id: UUID) -> str | None:
