@@ -8,8 +8,8 @@ export const showcaseData: ShowcaseItem[] = [
     {
         id: "q1",
         question: {
-            zh: "Q1. 高股息\"照妖镜\"",
-            en: "Q1. The High-Dividend \"Magic Mirror\""
+            zh: "帮我找一下中特估里真正靠得住的高股息国企，谁的现金流能覆盖分红？",
+            en: "Find me the truly reliable high-dividend SOEs. Whose cash flow actually covers their dividends?"
         },
         answer: {
             zh: `# 中特估高股息央国企深度复核报告
@@ -185,8 +185,8 @@ In a rate cut scenario, **Yangtze Power** and **China Mobile** have the stronges
     {
         id: "q2",
         question: {
-            zh: "Q2. AI硬件里的\"卖铲人\"",
-            en: "Q2. The \"Shovel Sellers\" in AI Hardware"
+            zh: "A股有哪些真正的高研发投入的AI硬件卖铲人？海外订单情况如何？",
+            en: "Which A-share AI hardware 'shovel sellers' actually have high R&D investment? How are their overseas orders?"
         },
         answer: {
             zh: `# AI硬件"卖铲人"筛选结果
@@ -284,8 +284,8 @@ Inferred from business structure (based on annual reports):
     {
         id: "q3",
         question: {
-            zh: "Q3. \"反内卷\"后的毛利拐点",
-            en: "Q3. Gross Margin Inflection Point After \"Anti-Involution\""
+            zh: "哪些新能源公司的毛利率已经连续两个季度回升了？谁是反内卷后的行业收割者？",
+            en: "Which new energy companies have seen their gross margins recover for two consecutive quarters? Who is winning the consolidation?"
         },
         answer: {
             zh: `# 根据我获取的财务数据分析，以下是您要的回答：
@@ -369,8 +369,8 @@ Inferred from business structure (based on annual reports):
     {
         id: "q4",
         question: {
-            zh: "Q4. 全面体检：贵州茅台(600519)",
-            en: "Q4. Comprehensive Checkup: Kweichow Moutai (600519)"
+            zh: "请帮我全面分析一下贵州茅台(600519)的基本面、资金流向和近期机构持仓变化。",
+            en: "Please provide a comprehensive analysis of Kweichow Moutai (600519), covering fundamentals, capital flow, and recent institutional holdings."
         },
         answer: {
             zh: `# 贵州茅台(600519)全面分析报告
@@ -528,8 +528,8 @@ Moutai entered the top 3 trading volume list 8 times in the last 10 days, with t
     {
         id: "q5",
         question: {
-            zh: "Q5. 招行 vs 兴业：银行股怎么选？",
-            en: "Q5. CMBC vs Industrial Bank: How to Choose?"
+            zh: "招商银行和兴业银行这两只银行股，从资产质量和盈利能力来看，现在该怎么选？",
+            en: "Between China Merchants Bank and Industrial Bank, how should I choose based on asset quality and profitability?"
         },
         answer: {
             zh: `# 招商银行 vs 兴业银行 对比分析
@@ -639,8 +639,8 @@ CMBC has larger total assets (12.15T). CMBC's net profit growth of 1.22% is high
     {
         id: "q6",
         question: {
-            zh: "Q6. \"聪明钱\"最近在干什么？",
-            en: "Q6. What is the \"Smart Money\" Doing?"
+            zh: "最近北向资金和国家队这些“聪明钱”都在买些什么板块？他们在获利了结还是在调仓？",
+            en: "What sectors are 'smart money' like Northbound capital and the National Team buying recently? Are they taking profits or rotating?"
         },
         answer: {
             zh: `# 北向资金与国家队换仓路径分析
@@ -748,8 +748,8 @@ Data as of: 2026-02-13
     {
         id: "q7",
         question: {
-            zh: "Q7. 用条件帮我选股",
-            en: "Q7. Stock Screening"
+            zh: "帮我用条件选股：ROE大于20%，PE小于15，市值超过100亿，并且资产负债率要低于60%。",
+            en: "Can you screen for stocks with ROE > 20%, PE < 15, market cap > 10 billion, and debt-to-asset ratio < 60%?"
         },
         answer: {
             zh: `# A股选股结果
@@ -805,8 +805,8 @@ It is the perfect "Low Leverage + High ROE" value investment.`
     {
         id: "q8",
         question: {
-            zh: "Q8. 多空辩论：万科A vs 保利发展",
-            en: "Q8. Bull/Bear Debate: Vanke A vs Poly Development"
+            zh: "现在是抄底地产股的时机吗？请帮我多空辩论一下：当前时点万科A是不是比保利发展更值得投资？",
+            en: "Is it time to bottom-fish real estate stocks? Please run a bull/bear debate: Is Vanke A a better investment than Poly Development right now?"
         },
         answer: {
             zh: `# 万科A vs 保利发展 地产股抄底时机对比分析报告
@@ -875,6 +875,226 @@ Based on Vanke A's 2025 H1 financial data showing absolute disadvantage—Net Lo
 **Conclusion**: Vanke A is in deep distress with billions in losses, high leverage, and zero dividends. Lack of Poly data does not change Vanke's absolute disadvantage.
 
 **Recommendation**: Avoid Vanke A in the medium term (3-12 months). Focus on more stable peers like Poly Development.`
+        }
+    },
+    {
+        id: "q9",
+        question: {
+            zh: "请帮我看一下继峰股份的财报，并且进行更深入的分析，看看有哪些值得注意的地方。",
+            en: "Please read the latest financial report for Jifeng Auto and provide a deep analysis. Tell me what needs attention."
+        },
+        answer: {
+            zh: `# 继峰股份（603997）财务报告深度分析
+报告日期：2026年2月20日 | 数据来源：2025年三季报（2025-10-31）、2024年年报（2025-03-29）
+
+### 一、核心财务发现
+**1. 营收连续下滑，但盈利能力边际改善**
+| 指标 | 2025年1-9月 | 同比 | 2024年全年 | 同比 |
+| :--- | :--- | :--- | :--- | :--- |
+| 营业收入 | 161.31亿 | -4.58% | 222.55亿 | +3.17% |
+| 归母净利润 | 2.51亿 | 扭亏 | -5.67亿 | -377.81% |
+| 扣非净利润 | 2.70亿 | 扭亏 | -5.48亿 | -346.68% |
+| ROE | 5.13% | +16.94pct | -12.38% | -17.80pct |
+
+**关键发现：**
+- 营收连续3个季度负增长（Q3单季-4.94%），显示主业仍面临压力。
+- 净利润扭亏主要因：①2024年Q3出售子公司基数低；②资产减值大幅收窄（从-2.97亿收窄至-0.48亿）。
+- **需注意**：利润改善并非来自主业经营效率显著提升，而是基数效应和减值收窄。
+
+**2. 资产负债表关键变化**
+| 科目 | 2025Q3末 | 2024年末 | 变动 | 风险评估 |
+| :--- | :--- | :--- | :--- | :--- |
+| 总资产 | 222.20亿 | 202.85亿 | +9.54% | 扩张中 |
+| 负债合计 | 168.06亿 | 153.80亿 | +9.25% | 杠杆攀升 |
+| 资产负债率 | 75.63% | 75.82% | 持平 | 高负债 |
+| 应收账款 | 45.39亿 | 45.84亿 | -1.24% | 仍处高位 |
+| 存货 | 18.80亿 | 16.41亿 | +14.57% | 需关注滞销风险 |
+| 合同资产 | 9.19亿 | 4.74亿 | +93.79% | 订单转化周期 |
+| 商誉 | 17.46亿 | 15.77亿 | +10.71% | 减值风险 |
+| 长期借款 | 52.5亿 | 45.71亿 | +14.87% | 偿债压力 |
+
+**重点风险：**
+- **（1）存货激增14.57%**：从16.41亿增至18.80亿元。可能原因：下游需求放缓、备货过多、或原材料积压。若市场需求持续低迷，存在存货跌价计提压力。
+- **（2）合同资产大增93.79%**：从4.74亿增至9.19亿元。未结算的工程项目/产品大幅增加，可能反映在手订单增加，但转化为收入需要时间。
+- **（3）商誉持续增长**：商誉17.46亿元，占归母净资产34%，占无形资产154%。2024年计提商誉减值4.18亿元。风险：海外Grammer子公司仍处亏损状态，若经济持续疲软，可能继续减值。
+
+**3. 现金流质量分析**
+| 现金流项目 | 2025年1-9月 | 2024年全年 | 2023年全年 |
+| :--- | :--- | :--- | :--- |
+| 经营活动现金流 | 7.60亿 | 2.70亿 | 16.48亿 |
+| 投资活动现金流 | -9.00亿 | -15.87亿 | -12.22亿 |
+| 筹资活动现金流 | -4.42亿 | +21.56亿 | -2.81亿 |
+| 现金净增加额 | -4.74亿 | +7.68亿 | +1.99亿 |
+
+**关键发现：**
+- **经营活动现金流改善**（2025年1-9月7.60亿 vs 2024年同期-4.28亿）。管理层归因于"经营效率提升、营业利润增加"。
+- **投资支出持续高企**：2024年投资现金流出15.87亿元，主要用于扩产及并购；2025年1-9月已投9亿元。
+- **筹资活动转为净流出**：2024年定增募资11.83亿元后，2025年偿还债务增加。期末现金及等价物16.43亿元，现金净减少4.74亿元。
+
+**4. 业务分部深度解析**
+*2024年分部数据*
+| 分部 | 营业收入 | 同比 | 归母净利润 | 同比 | 备注 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 继峰（新兴业务） | 64.31亿 | +60.27% | 2.79亿 | +41.82% | 高增长 |
+| 格拉默（传统业务） | 161.04亿 | -9.14% | -6.25亿 | 转亏 | 亏损主因 |
+| **集团合计** | **222.55亿** | **+3.17%** | **-5.67亿** | **转亏** | — |
+
+*分产品表现：*
+- 乘用车座椅：31.10亿，**首次盈亏平衡**，在手21个生命周期项目。
+- 商用车座椅：54.04亿（+14.61%），增长稳健。
+- 座椅头枕：42.27亿（+17.22%），传统优势产品。
+
+**5. 费用结构变化（2025年1-9月 vs 2024年同期）**
+- **研发费用**：5.48亿（+42.04%），加大新能源/智能座椅投入。
+- **管理费用**：12.13亿（-28.90%），降本增效。
+- **财务费用**：1.97亿（下降），定增置换高成本欧元贷款。
+- **销售费用**：2.28亿（下降），效率提升。
+
+**6. 资产减值分析**
+| 减值项目 | 2025年1-9月 | 2024年全年 | 2023年全年 |
+| :--- | :--- | :--- | :--- |
+| 资产减值损失 | -0.48亿 | -2.97亿 | -0.31亿 |
+| 信用减值损失 | - | -0.57亿 | -0.12亿 |
+| **合计** | **-0.48亿** | **-3.54亿** | **-0.43亿** |
+
+- 2024年资产减值大幅增加是亏损主因之一（-2.97亿）。
+- 2025年减值大幅收窄，助力扭亏。但商誉减值测试依赖主观假设（折现率、增长率），仍需关注。
+
+### 二、关键风险汇总
+| 风险类型 | 风险点 | 严重程度 |
+| :--- | :--- | :--- |
+| 经营风险 | 营收连续3季度负增长，主业需求疲软 | 🔴 高 |
+| 偿债风险 | 资产负债率75.6%，长期借款52.5亿，财务费用高 | 🔴 高 |
+| 资产风险 | 存货激增14.57%，存在滞销/跌价风险 | 🟠 中 |
+| 商誉风险 | 商誉17.46亿，Grammer资产组可能继续减值 | 🟠 中 |
+| 客户集中度 | 前五大客户占比37.22%，单一客户流失影响大 | 🟠 中 |
+| 海外风险 | 海外收入占比58%，汇率及地缘政治风险 | 🟠 中 |
+| 现金流风险 | 2025年现金净减少4.74亿，需关注流动性 | 🟠 中 |
+
+### 三、核心结论
+**基本面判断**
+- **短期盈利能力边际改善**：2025年Q3扭亏，但主要靠基数效应和减值收窄，非主业显著好转。
+- **主业仍承压**：营收连续负增长，乘用车座椅业务刚盈亏平衡，需观察持续性。
+- **财务杠杆高企**：75%+资产负债率，偿债压力较大。
+- **新兴业务有亮点**：乘用车座椅业务在手订单丰富，研发投入加大。
+
+**估值水平**
+- **动态PE**：83.96倍（汽车零部件行业平均约20-30倍）
+- **市净率**：3.53倍（偏高）
+- **估值结论**：当前股价14.27元对应的PE高达83.96倍，远高于行业平均水平，存在估值泡沫风险。
+
+**投资建议**
+- **成长性**：🟡 中性（新兴业务有潜力，但主业承压）
+- **盈利能力**：🟡 中性（扭亏但质量待验证）
+- **财务风险**：🔴 高（高负债+现金流趋弱）
+- **估值**：🔴 高估
+- **综合评级**：**观望**
+- **操作建议**：建议等待2025年年报（预计2026年3-4月披露）。重点观察营收增速是否转正、乘用车座椅业务盈利持续性、以及现金流是否持续改善。当前估值偏高，建议在基本面出现明确拐点前保持谨慎。`,
+            en: `# Jifeng Auto (603997) In-Depth Financial Report Analysis
+Report Date: February 20, 2026 | Data Source: 2025 Q3 Report (2025-10-31), 2024 Annual Report (2025-03-29)
+
+### I. Core Financial Findings
+**1. Consecutive Revenue Decline, but Marginal Profitability Improvement**
+| Metric | 2025 Jan-Sep | YoY | 2024 FY | YoY |
+| :--- | :--- | :--- | :--- | :--- |
+| Revenue | 16.131B | -4.58% | 22.255B | +3.17% |
+| Net Profit | 251M | Turnaround | -567M | -377.81% |
+| Non-GAAP Net | 270M | Turnaround | -548M | -346.68% |
+| ROE | 5.13% | +16.94pct | -12.38% | -17.80pct |
+
+**Key Findings**:
+- Revenue showed negative growth for 3 consecutive quarters (Q3 alone -4.94%), indicating ongoing pressure on the main business.
+- Net profit turnaround is mainly due to: ① Low base from selling a subsidiary in 2024 Q3; ② Significant narrowing of asset impairment (from -297M to -48M).
+- **Note**: Profit improvement didn't come from marked operational efficiency gains in the main business, but from base effects and reduced impairment.
+
+**2. Key Balance Sheet Changes**
+| Item | 2025 Q3 End | 2024 End | Change | Risk Assessment |
+| :--- | :--- | :--- | :--- | :--- |
+| Total Assets | 22.220B | 20.285B | +9.54% | Expanding |
+| Total Liabs | 16.806B | 15.380B | +9.25% | Rising Leverage |
+| Debt Ratio | 75.63% | 75.82% | Flat | High Debt |
+| Accounts Rec | 4.539B | 4.584B | -1.24% | Still High |
+| Inventory | 1.880B | 1.641B | +14.57% | Watch Dead Stock |
+| Contract Assets | 919M | 474M | +93.79% | Order Conversion |
+| Goodwill | 1.746B | 1.577B | +10.71% | Impairment Risk |
+| Long-term Debt | 5.250B | 4.571B | +14.87% | Repayment Pressure |
+
+**Key Risks**:
+- **(1) Inventory surging 14.57%**: Increased from 1.641B to 1.88B. Possible causes: slowing downstream demand, overstocking, or raw material backlog. Risk of inventory write-downs if demand remains sluggish.
+- **(2) Contract assets surging 93.79%**: Increased from 474M to 919M. Reflects a large increase in unsettled projects/products, possibly reflecting order growth, but conversion to revenue takes time.
+- **(3) Continuous goodwill growth**: Goodwill at 1.746B, accounting for 34% of net assets and 154% of intangible assets. In 2024, 418M in goodwill impairment was recorded (mostly Grammer). Risk: Overseas Grammer subsidiary remains unprofitable, further impairment possible if economy stays weak.
+
+**3. Cash Flow Quality Analysis**
+| Cash Flow Item | 2025 Jan-Sep | 2024 FY | 2023 FY |
+| :--- | :--- | :--- | :--- |
+| Operating CF | 760M | 270M | 1.648B |
+| Investing CF | -900M | -1.587B | -1.222B |
+| Financing CF | -442M | +2.156B | -281M |
+| Net Cash | -474M | +768M | +199M |
+
+**Key Findings**:
+- **Operating cash flow improved** (760M in 2025 Jan-Sep vs -428M YoY). Management attributes this to "improved operational efficiency and operating profit increase".
+- **Investing outflows remain high**: 1.587B in 2024 mainly for capacity expansion and M&A; 900M already invested in 2025 Jan-Sep.
+- **Financing cash flow turned negative**: After raising 1.183B via private placement in 2024, debt repayment increased in 2025. Ending cash & equivalents 1.643B (net decrease of 474M).
+
+**4. Business Segment Deep Dive**
+*2024 Segment Data*
+| Segment | Revenue | YoY | Net Profit | YoY | Note |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Jifeng (Emerging) | 6.431B | +60.27% | 279M | +41.82% | High Growth |
+| Grammer (Legacy) | 16.104B| -9.14% | -625M | Turn Loss | Main Loss Driver |
+| **Group Total** | **22.255B**| **+3.17%** | **-567M**| **Turn Loss**| — |
+
+*Product Performance:*
+- Passenger Car Seats: 3.11B, **first-time breakeven**, 21 lifecycle projects on hand.
+- Commercial Car Seats: 5.4B (+14.61%), steady growth.
+- Seat Headrests: 4.22B (+17.22%), traditional strength.
+
+**5. Expense Structure Changes (2025 Jan-Sep vs YoY)**
+- **R&D Expenses**: 548M (+42.04%) - Increased investment in NEV/smart seats.
+- **Management Expenses**: 1.213B (-28.90%) - Cost reduction and efficiency gains.
+- **Financial Expenses**: 197M (Decreased) - Replaced high-cost Euro loans via private placement.
+- **Sales Expenses**: 228M (Decreased) - Efficiency improvement.
+
+**6. Asset Impairment Analysis**
+| Impairment Item | 2025 Jan-Sep | 2024 FY | 2023 FY |
+| :--- | :--- | :--- | :--- |
+| Asset Impairment | -48M | -297M | -31M |
+| Credit Impairment | - | -57M | -12M |
+| **Total** | **-48M** | **-354M** | **-43M** |
+
+- 2024 asset impairment surge (-297M) was a main loss driver.
+- 2025 narrowed significantly, aiding the turnaround, but goodwill impairment tests rely on subjective assumptions.
+
+### II. Key Risk Summary
+| Risk Type | Risk Point | Severity |
+| :--- | :--- | :--- |
+| Operational | Revenue down for 3 quarters, weak main demand | 🔴 High |
+| Debt | Debt ratio 75.6%, long-term debt 5.25B, high finance cost | 🔴 High |
+| Asset | Inventory surged 14.57%, dead stock risk | 🟠 Medium |
+| Goodwill | Goodwill 1.746B, Grammer asset group may impair again | 🟠 Medium |
+| Concentration | Top 5 clients 37.22%, high impact if one leaves | 🟠 Medium |
+| Overseas | Overseas revenue 58%, FX and geopolitical risks | 🟠 Medium |
+| Cash Flow | 2025 net cash drop 474M, watch liquidity | 🟠 Medium |
+
+### III. Core Conclusion
+**Fundamental Judgment**
+- **Short-term marginal profit improvement**: Turnaround in 2025 Q3 mainly relies on base effects and narrowed impairment, not a significant main business recovery.
+- **Main business still under pressure**: Consecutive revenue declines; passenger car seat business just broke even.
+- **High financial leverage**: 75%+ debt ratio, significant repayment pressure.
+
+**Valuation Level**
+- **Dynamic PE**: 83.96x (Auto parts industry average is ~20-30x)
+- **PB**: 3.53x (On the high side)
+- **Comparison**: Current price of 14.27 RMB implies an 83.96x PE, far above the industry average. Risk of valuation bubble.
+
+**Investment Recommendation**
+- **Growth**: 🟡 Neutral (Emerging potential, but main business pressured)
+- **Profitability**: 🟡 Neutral (Turnaround, but quality needs verification)
+- **Financial Risk**: 🔴 High (High debt + weakening cash flow)
+- **Valuation**: 🔴 Overvalued
+- **Overall Rating**: **Wait and See**
+- **Action**: Wait for 2025 Annual Report (expected Mar-Apr 2026). Watch if revenue growth turns positive, passenger seat profitability sustains, and cash flow improves. Maintain caution given high valuation.`
         }
     }
 ];
