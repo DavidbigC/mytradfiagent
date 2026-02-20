@@ -206,6 +206,67 @@ def _extract_key_sections(text: str, extra_keywords: list[str] | None = None) ->
     return result
 
 
+# Keywords that identify financially important chapter names
+_KEEP_CHAPTER_KEYWORDS = [
+    "主要财务指标", "财务指标", "会计数据", "财务数据", "财务摘要", "财务概要",
+    "管理层讨论", "经营情况", "经营分析", "管理层报告",
+    "财务报告", "财务报表", "审计报告",
+    "业务综述", "主营业务",
+    "风险管理", "各类风险",
+]
+
+# Keywords that identify boilerplate/governance chapters to skip
+_SKIP_CHAPTER_KEYWORDS = [
+    "重要提示", "目录", "释义", "备查",
+    "公司简介", "公司概况",
+    "公司治理",
+    "环境", "社会责任",
+    "重要事项",
+    "优先股",
+    "债券相关",
+    "股份变动", "股东情况",
+]
+
+# Regex to match TOC entries like "第三节 管理层讨论与分析 ...... 19"
+_TOC_ENTRY_RE = re.compile(
+    r"^第[一二三四五六七八九十百]+[章节]\s+(.+?)[\s\.·。…]+\d+\s*$"
+)
+
+# Regex to detect chapter headings in the body text
+_CHAPTER_HEADING_RE = re.compile(r"^第[一二三四五六七八九十百]+[章节][\s\u3000]")
+
+
+def _should_keep_chapter(name: str) -> bool:
+    """Classify a chapter by name: True = financially relevant, False = skip.
+
+    Keep-keywords are checked before skip-keywords so that chapters like
+    "公司简介和主要财务指标" (contains both) are correctly kept.
+    """
+    if any(kw in name for kw in _KEEP_CHAPTER_KEYWORDS):
+        return True
+    if any(kw in name for kw in _SKIP_CHAPTER_KEYWORDS):
+        return False
+    return True  # unknown chapters: keep rather than risk losing data
+
+
+def _parse_toc(text: str) -> list[dict]:
+    """Parse the table of contents from the first 400 lines of a report.
+
+    Returns a list of {'name': str, 'keep': bool} for each chapter found.
+    Returns [] if no TOC is detected (safe — callers treat [] as "no filter").
+    """
+    chapters = []
+    for line in text.split("\n")[:400]:
+        m = _TOC_ENTRY_RE.match(line.strip())
+        if not m:
+            continue
+        name = m.group(1).strip()
+        # Strip trailing punctuation noise
+        name = re.sub(r"[\s（(）)、，,。\.…·]+$", "", name)
+        chapters.append({"name": name, "keep": _should_keep_chapter(name)})
+    return chapters
+
+
 def _extract_pdf_link(html: str) -> str | None:
     """Extract PDF download link from report detail page."""
     # Pattern: file.finance.sina.com.cn/.../*.PDF

@@ -780,3 +780,30 @@
 - **User locks fix**: `_user_locks` dict grew unbounded. Now each entry tracks last-used time, and stale locks (unused >1hr, not currently held) are cleaned up every 5 minutes.
 - **Sources fix**: `_load_sources`/`_save_sources` had a classic read-modify-write race condition. Two concurrent `save_data_source` calls could lose one write. Now uses `fcntl.flock` for exclusive write locking and shared read locking.
 - **Conversation summarization**: When a conversation exceeds 30 user+assistant messages, older messages are summarized into a single dense paragraph via an LLM call. The summary is persisted in the `conversations.summary` column and prepended to the message list on future requests. Recent 10 messages are always kept unsummarized. Full history remains in the `messages` table untouched. Follows the same pattern as LangGraph checkpointers and OpenAI's conversation state API.
+
+## 2026-02-20 — Add report_cache table schema
+
+**What:** Added the `report_cache` table to `SCHEMA_SQL` in `db.py` to cache distilled financial report metadata and file paths.
+
+**Files:**
+- `db.py` — modified (appended `report_cache` table + lookup index to `SCHEMA_SQL`)
+
+**Details:**
+- Table stores one row per (stock_code, report_type, report_year) with a UNIQUE constraint on that triple
+- Columns: `id`, `stock_code` (CHAR 6), `report_type` (yearly/q1/mid/q3), `report_year` (SMALLINT), `report_date` (filing date string), `title`, `filepath` (relative path to distilled .md), `source_url`, `created_at`
+- `idx_report_cache_lookup` index added on (stock_code, report_type, report_year) for fast lookups
+- No migration tooling needed; `init_db()` applies the schema via `CREATE TABLE IF NOT EXISTS` on next server start
+
+## 2026-02-20 — TOC parser and chapter classifier for CN annual reports
+
+**What:** Added constants, regex patterns, `_should_keep_chapter()`, and `_parse_toc()` to `tools/sina_reports.py` so callers can filter boilerplate sections from Chinese annual reports before sending text to an LLM.
+
+**Files:**
+- `tools/sina_reports.py` — modified (added constants and two functions after `_extract_key_sections`)
+
+**Details:**
+- `_KEEP_CHAPTER_KEYWORDS` and `_SKIP_CHAPTER_KEYWORDS` drive classification; keep-keywords are checked first so mixed-title chapters like "公司简介和主要财务指标" are correctly retained
+- `_TOC_ENTRY_RE` matches TOC lines of the form "第N节 Title ...... pagenum"
+- `_CHAPTER_HEADING_RE` matches chapter headings in body text (available for future use)
+- `_parse_toc()` scans the first 400 lines; returns `[]` when no TOC is detected (callers treat that as "no filter")
+- Unknown chapters default to keep (True) to avoid accidental data loss
