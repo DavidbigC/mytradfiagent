@@ -517,7 +517,7 @@ RULES:
 - Output valid JSON only, no other text.
 - The hypothesis must be a concrete, testable statement (not a question).
 - data_plan: max 20 tool calls. Choose tools relevant to the question type.
-- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(q3) — prefer q3 over mid because it is more recent (covers Jan–Sep vs Jan–Jun). Only fall back to mid if the question is asked before Q3 would be published (i.e., before October). Never use mid when q3 is likely available. Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends. ALSO include 2-3 web_search calls covering: (1) the company's core business, strategy, and market positioning, (2) the industry/sector outlook and competitive landscape, (3) recent company news, management changes, or strategic moves. These qualitative searches are MANDATORY — financial metrics alone are not sufficient.
+- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(q3) for the quarterly. (The system will automatically replace the quarterly report_type with the correct one based on today's date — just use "q3" as a placeholder.) Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends. ALSO include 2-3 web_search calls covering: (1) the company's core business, strategy, and market positioning, (2) the industry/sector outlook and competitive landscape, (3) recent company news, management changes, or strategic moves. These qualitative searches are MANDATORY — financial metrics alone are not sufficient.
 - For comparison: include fetch_company_report(yearly) for each stock, plus standard financials for each. Add web_search for industry trends and how the two companies' business models differ.
 - For sector/general: use screener, hotspots, flows, web search for macro and sector-level business trends.
 - pro_framing and con_framing should be concise instructions for the analysts.
@@ -541,6 +541,26 @@ RULES:
 
 USER QUESTION: __QUESTION__
 """
+
+
+def _latest_quarterly_type() -> str:
+    """Return the most recently published quarterly report type based on today's date.
+
+    Chinese A-share filing deadlines:
+      Q1  (Jan–Mar)  → due April 30     → available May+
+      Mid (Jan–Jun)  → due August 31    → available September+
+      Q3  (Jan–Sep)  → due October 31   → available November+
+      Annual         → due April 30 next year (handled separately)
+    """
+    month = datetime.now().month
+    if month >= 11:   # Nov–Dec: Q3 is published
+        return "q3"
+    elif month >= 9:  # Sep–Oct: mid-year is most recent
+        return "mid"
+    elif month >= 5:  # May–Aug: Q1 is most recent
+        return "q1"
+    else:             # Jan–Apr: Q3 from the prior year is still the latest quarterly
+        return "q3"
 
 
 async def _form_hypothesis(user_question: str, context: str = "", thinking_fn=None) -> dict:
@@ -592,6 +612,15 @@ async def _form_hypothesis(user_question: str, context: str = "", thinking_fn=No
     # Validate and cap data_plan
     if "data_plan" in hypothesis:
         hypothesis["data_plan"] = hypothesis["data_plan"][:20]
+
+    # Override quarterly report type with date-based selection — never trust the LLM for date math
+    latest_q = _latest_quarterly_type()
+    for item in hypothesis.get("data_plan", []):
+        if item.get("tool") == "fetch_company_report":
+            rt = item.get("args", {}).get("report_type", "")
+            if rt in ("q1", "mid", "q3"):
+                item["args"]["report_type"] = latest_q
+    logger.info(f"[TradeAnalyzer] Quarterly report type set to '{latest_q}' based on current date")
 
     logger.info(f"[TradeAnalyzer] Hypothesis formed: {hypothesis.get('hypothesis', '')}")
     logger.info(f"[TradeAnalyzer] Question type: {hypothesis.get('question_type', 'unknown')}, "
