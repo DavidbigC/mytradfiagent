@@ -8,16 +8,16 @@ import logging
 import httpx
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
-from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING, GROK_MODEL_REASONING
+from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
 
 _REPORTS_BASE = Path("output/reports")
 
-# Grok client for full-report reading (2M token context window)
-_grok_client: AsyncOpenAI | None = (
-    AsyncOpenAI(api_key=GROK_API_KEY, base_url=GROK_BASE_URL) if GROK_API_KEY else None
+# Minimax client for full-report reading (large token context window)
+_minimax_client: AsyncOpenAI | None = (
+    AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL) if MINIMAX_API_KEY else None
 )
 
 SINA_BASE = "https://vip.stock.finance.sina.com.cn"
@@ -590,28 +590,26 @@ def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, m
         filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
     return filtered
 
-async def _grok_summarize_report(
+async def _minimax_summarize_report(
     full_text: str,
     title: str,
     report_type_cn: str,
     focus_keywords: list[str] | None = None,
 ) -> str | None:
-    """Preprocess report text then summarize with Grok.
+    """Preprocess report text then summarize with Minimax.
 
     Returns a structured Markdown string suitable for caching, or None on failure.
-    Output includes both Grok narrative AND preserved financial tables (Option B).
+    Output includes both Minimax narrative AND preserved financial tables (Option B).
     """
-    if not _grok_client:
-        logger.warning("Grok client not initialised (GROK_API_KEY missing?) — falling back to keyword extraction")
+    if not _minimax_client:
+        logger.warning("Minimax client not initialised (MINIMAX_API_KEY missing?) — falling back to keyword extraction")
         return None
 
-    # Grok supports 2M-token context (~1.5M chars). Pass a large cap so only
-    # TOC section filtering + dedup run; the hard-cap keyword-scramble fallback
-    # is reserved for non-Grok paths.
-    grok_input = _prepare_for_grok(full_text, focus_keywords, max_chars=1_500_000)
+    # Minimax supports massive context window.
+    minimax_input = _prepare_for_grok(full_text, focus_keywords, max_chars=1_500_000)
     logger.info(
-        f"Grok input: {len(full_text):,} → {len(grok_input):,} chars "
-        f"({100 - len(grok_input) * 100 // max(len(full_text), 1)}% reduction)"
+        f"Minimax input: {len(full_text):,} → {len(minimax_input):,} chars "
+        f"({100 - len(minimax_input) * 100 // max(len(full_text), 1)}% reduction)"
     )
 
     focus_note = ""
@@ -651,29 +649,29 @@ async def _grok_summarize_report(
         "从报告中找出2–4个最值得深入研究的发现。可以是：超预期或低于预期的指标、"
         "趋势转折点、管理层措辞变化、隐藏风险、与行业对比后的异常。"
         "每条注明具体数据依据。\n\n"
-        f"以下是报告内容：\n\n{grok_input}"
+        f"以下是报告内容：\n\n{minimax_input}"
     )
 
     try:
-        resp = await _grok_client.chat.completions.create(
-            model=GROK_MODEL_REASONING,
+        resp = await _minimax_client.chat.completions.create(
+            model=MINIMAX_MODEL,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=16_000,
+            max_tokens=4096,
         )
         choice = resp.choices[0]
         finish_reason = choice.finish_reason
         content = choice.message.content or ""
         logger.info(
-            f"Grok response: {len(content):,} chars, finish_reason={finish_reason}"
+            f"Minimax response: {len(content):,} chars, finish_reason={finish_reason}"
         )
         if finish_reason == "length":
-            logger.warning("Grok output hit max_tokens — summary may be incomplete")
+            logger.warning("Minimax output hit max_tokens — summary may be incomplete")
         return content or None
     except Exception as e:
-        logger.warning(f"Grok report summarization failed: {e}")
+        logger.warning(f"Minimax report summarization failed: {e}")
         return None
 
 
@@ -768,11 +766,11 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
     pdf_link = _extract_pdf_link(detail_html)
 
     logger.info(f"Distilling {len(full_text):,} chars for {latest['title']}")
-    summary = await _grok_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
+    summary = await _minimax_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
 
     if summary:
         distilled_content = summary
-        summarized_by = "grok"
+        summarized_by = "minimax"
     else:
         distilled_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
         summarized_by = "keyword_extraction"
