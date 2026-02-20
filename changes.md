@@ -833,3 +833,31 @@
 - If no TOC is detected, falls back to full text with an info log message
 - Step 2 (deduplication) and Step 3 (keyword-section extraction + hard cap) are unchanged in logic, but now operate on already-filtered text
 - TOC filtering typically removes 40–60% of annual report text before the remaining steps run
+
+## 2026-02-20 — Improve Grok prompt for structured Option-B report distillation
+
+**What:** Replaced `_grok_summarize_report()` in `tools/sina_reports.py` with an Option-B prompt that produces both a full narrative and preserved financial tables as Markdown tables.
+
+**Files:**
+- `tools/sina_reports.py` — modified (replaced `_grok_summarize_report` function body)
+
+**Details:**
+- New docstring clarifies the function returns a structured Markdown string (Option B: narrative + tables).
+- System prompt now explicitly instructs Grok to preserve all financial tables in Markdown table format and not omit any figures or ratios.
+- User prompt restructured into five labelled sections: 核心财务指标 (with a table), 管理层讨论与分析摘要 (including segmented revenue tables), 财务报表关键数据 (P&L, balance sheet, cash flow, industry-specific KPIs), 风险因素, and 亮点与异常发现.
+- Added a pre-processing context block ("阅读策略") explaining which report sections were retained vs. filtered.
+- `focus_note` label changed from "请特别关注以下指标" to "**重点关注指标**" for Markdown emphasis.
+- Division-by-zero guard added: `max(len(full_text), 1)` in the reduction-percentage log line.
+
+## 2026-02-20 — Add cache path helper and report year extraction
+
+**What:** Added `_get_cache_path()` and `_extract_report_year()` helper functions to `tools/sina_reports.py`, along with the `_REPORTS_BASE` path constant and `pathlib.Path` import, to support future report caching.
+
+**Files:**
+- `tools/sina_reports.py` — modified (added `from pathlib import Path`, `_REPORTS_BASE`, `_get_cache_path()`, `_extract_report_year()`)
+
+**Details:**
+- `_REPORTS_BASE = Path("output/reports")` defines the root cache directory.
+- `_get_cache_path(stock_code, report_year, report_type)` returns a structured path: `output/reports/{stock_code}/{year}_{code}_{type}.md`.
+- `_extract_report_year(title, report_date)` parses the 4-digit year from a Chinese report title (e.g. `2024年`) and falls back to the year portion of `report_date` if no year is found in the title.
+- Both functions inserted after `_SKIP_CHAPTER_KEYWORDS` block, before `_TOC_ENTRY_RE`.
