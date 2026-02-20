@@ -1,5 +1,20 @@
 # Changes
 
+## 2026-02-20 — Fix TOC parser for real CN annual report format
+
+**What:** Fixed three bugs that caused `_parse_toc()` to return [] on every real annual report, falling back to the 80k hard-cap with no TOC filtering.
+
+**Files:**
+- `tools/sina_reports.py` — modified
+
+**Details:**
+- Bug 1: `_TOC_ENTRY_RE` used `\s+` (required space) after 章/节, but real reports have no space: `第一章公司简介 ...... 9` not `第一章 公司简介 ...... 9`. Fixed to `\s*`.
+- Bug 2: `_CHAPTER_HEADING_RE` also required `[\s\u3000]` after 章/节, so body-text chapter boundaries were never detected. Fixed by removing the space requirement.
+- Bug 3: `_parse_toc` didn't handle plain pre-chapter TOC entries (`重要提示 ...... 1`, `董事会致辞 ...... 5` etc.) and didn't anchor on the `目录` marker. Rewrote to: (1) find `目录` in first 600 lines, (2) parse up to 120 lines after it with both `_TOC_ENTRY_RE` and new `_TOC_PLAIN_ENTRY_RE`, (3) fall back to 400-line scan if no `目录` found.
+- Added `致辞`, `致词` to `_SKIP_CHAPTER_KEYWORDS` (covers 董事会致辞, 行长致辞 etc.)
+- Added `_TOC_PLAIN_ENTRY_RE` regex for plain entries; excludes sub-entries starting with 一、（一） etc.
+- Verified against real 上海银行2024年报 TOC: 15/15 chapters detected, all keep/skip flags correct, sub-entries excluded.
+
 ## 2026-02-20 — Add structure.md architecture reference
 
 **What:** Created a comprehensive architecture document so future coding agents can understand the full system without reading every source file.
