@@ -267,6 +267,51 @@ def _parse_toc(text: str) -> list[dict]:
     return chapters
 
 
+def _filter_sections_by_toc(text: str, chapters: list[dict]) -> str:
+    """Remove skip-chapters from report text using TOC-detected chapter boundaries.
+
+    Scans lines from position 50 onwards (skipping the TOC block itself) for
+    chapter headings, assigns each block to a chapter, and discards skip-chapters.
+
+    Returns the original text unchanged if no chapter boundaries are found
+    (safe fallback — better to send too much than too little).
+    """
+    if not chapters:
+        return text
+
+    lines = text.split("\n")
+    boundaries: list[tuple[int, bool]] = []  # (line_index, keep)
+
+    # Search body text (skip first 50 lines = TOC area)
+    for i, line in enumerate(lines[50:], start=50):
+        stripped = line.strip()
+        if not _CHAPTER_HEADING_RE.match(stripped):
+            continue
+        # Match to known chapter by checking if any chapter name starts this line
+        keep = True  # default
+        for ch in chapters:
+            # Compare first 6 chars of chapter name — distinctive enough
+            if ch["name"][:6] and ch["name"][:6] in stripped:
+                keep = ch["keep"]
+                break
+        boundaries.append((i, keep))
+
+    if not boundaries:
+        return text  # no chapter headings found — return unchanged
+
+    result: list[str] = []
+    for idx, (pos, keep) in enumerate(boundaries):
+        next_pos = boundaries[idx + 1][0] if idx + 1 < len(boundaries) else len(lines)
+        if keep:
+            result.extend(lines[pos:next_pos])
+
+    filtered = "\n".join(result)
+    # Safety: if filter removed too aggressively, fall back to original
+    if len(text) > 10000 and len(filtered) < 1000:
+        logger.warning("TOC filter produced <1000 chars — falling back to full text")
+        return text
+    return filtered
+
 def _extract_pdf_link(html: str) -> str | None:
     """Extract PDF download link from report detail page."""
     # Pattern: file.finance.sina.com.cn/.../*.PDF
