@@ -256,6 +256,63 @@ def _extract_report_year(title: str, report_date: str) -> int:
     return 2024  # should never reach here
 
 
+async def _check_report_cache(stock_code: str, report_type: str, report_year: int) -> str | None:
+    """Check if a distilled report already exists in DB and on disk.
+
+    Returns the filepath string if valid, None if cache miss or file missing.
+    """
+    try:
+        from db import get_pool
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT filepath FROM report_cache "
+            "WHERE stock_code=$1 AND report_type=$2 AND report_year=$3",
+            stock_code, report_type, report_year,
+        )
+        if not row:
+            return None
+        filepath = row["filepath"]
+        if not Path(filepath).exists():
+            logger.warning(f"Cache DB entry exists but file missing: {filepath}")
+            return None
+        return filepath
+    except Exception as e:
+        logger.warning(f"Cache lookup failed: {e}")
+        return None
+
+
+async def _save_report_cache(
+    stock_code: str,
+    report_type: str,
+    report_year: int,
+    report_date: str,
+    title: str,
+    filepath: str,
+    source_url: str,
+) -> None:
+    """Upsert a cache entry. Silently ignores failures (cache is best-effort)."""
+    try:
+        from db import get_pool
+        pool = await get_pool()
+        await pool.execute(
+            """
+            INSERT INTO report_cache
+                (stock_code, report_type, report_year, report_date, title, filepath, source_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (stock_code, report_type, report_year) DO UPDATE
+                SET filepath    = EXCLUDED.filepath,
+                    report_date = EXCLUDED.report_date,
+                    title       = EXCLUDED.title,
+                    source_url  = EXCLUDED.source_url
+            """,
+            stock_code, report_type, report_year,
+            report_date, title, filepath, source_url,
+        )
+        logger.info(f"Cache DB entry saved: {stock_code} {report_type} {report_year}")
+    except Exception as e:
+        logger.warning(f"Cache DB write failed: {e}")
+
+
 # Regex to match TOC entries like "第三节 管理层讨论与分析 ...... 19"
 _TOC_ENTRY_RE = re.compile(
     r"^第[一二三四五六七八九十百]+[章节]\s+(.+?)[\s\.·。…]+\d+\s*$"
