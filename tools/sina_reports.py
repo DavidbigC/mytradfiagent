@@ -8,7 +8,7 @@ import logging
 import httpx
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
-from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
+from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING, GROK_MODEL_REASONING
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
@@ -584,24 +584,7 @@ def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, m
     if len(text) <= max_chars:
         return text
 
-    # Step 3a: For large-context Grok path — head + tail to capture both
-    # management discussion (front of report) and financial statements (back).
-    # Annual reports: 节三管理层讨论 is in the first half; 节十财务报告 is the last ~20%.
-    if max_chars >= 150_000:
-        head = max_chars // 3          # ~1/3 for intro + management discussion start
-        tail = max_chars - head        # ~2/3 for financial statements at the end
-        sep = (
-            "\n\n...[中间章节已省略（公司治理/环境责任/重要事项/股东情况），"
-            "以下为财务报告章节]...\n\n"
-        )
-        result = text[:head] + sep + text[-tail:]
-        logger.info(
-            f"Head+tail split: {len(text):,} → {len(result):,} chars "
-            f"(head={head:,}, tail={tail:,})"
-        )
-        return result
-
-    # Step 3b: Keyword-section extraction + hard cap (fallback for non-Grok paths)
+    # Step 3: Keyword-section extraction + hard cap (fallback for non-Grok paths)
     filtered = _extract_key_sections(text, extra_keywords=focus_keywords)
     if len(filtered) > max_chars:
         filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
@@ -622,11 +605,10 @@ async def _grok_summarize_report(
         logger.warning("Grok client not initialised (GROK_API_KEY missing?) — falling back to keyword extraction")
         return None
 
-    # Send at most 250k chars to Grok: TOC filter + dedup first, then head+tail
-    # split so both management discussion (front) and financial tables (back)
-    # are preserved. This keeps input ~150k tokens — well within Grok's 2M
-    # context and small enough that the model generates a full output response.
-    grok_input = _prepare_for_grok(full_text, focus_keywords, max_chars=250_000)
+    # Grok supports 2M-token context (~1.5M chars). Pass a large cap so only
+    # TOC section filtering + dedup run; the hard-cap keyword-scramble fallback
+    # is reserved for non-Grok paths.
+    grok_input = _prepare_for_grok(full_text, focus_keywords, max_chars=1_500_000)
     logger.info(
         f"Grok input: {len(full_text):,} → {len(grok_input):,} chars "
         f"({100 - len(grok_input) * 100 // max(len(full_text), 1)}% reduction)"
@@ -674,7 +656,7 @@ async def _grok_summarize_report(
 
     try:
         resp = await _grok_client.chat.completions.create(
-            model=GROK_MODEL_NOREASONING,
+            model=GROK_MODEL_REASONING,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
@@ -771,9 +753,17 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
 
     full_text = body_text
     if tables:
-        full_text += "\n\n=== FINANCIAL TABLES ===\n"
-        for i, t in enumerate(tables[:20]):
-            full_text += f"\n--- Table {i+1} ---\n{t}\n"
+        # Skip oversized tables — Sina embeds the entire report as one giant
+        # HTML table (~622k chars). soup.get_text() already captured that
+        # content in body_text, so appending it again just doubles the input.
+        small_tables = [t for t in tables if len(t) <= 50_000]
+        if small_tables:
+            full_text += "\n\n=== FINANCIAL TABLES ===\n"
+            for i, t in enumerate(small_tables[:20]):
+                full_text += f"\n--- Table {i+1} ---\n{t}\n"
+        skipped = len(tables) - len(small_tables)
+        if skipped:
+            logger.info(f"Skipped {skipped} oversized table(s) (already in body text)")
 
     pdf_link = _extract_pdf_link(detail_html)
 
