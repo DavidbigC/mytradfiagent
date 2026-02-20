@@ -861,3 +861,47 @@
 - `_get_cache_path(stock_code, report_year, report_type)` returns a structured path: `output/reports/{stock_code}/{year}_{code}_{type}.md`.
 - `_extract_report_year(title, report_date)` parses the 4-digit year from a Chinese report title (e.g. `2024年`) and falls back to the year portion of `report_date` if no year is found in the title.
 - Both functions inserted after `_SKIP_CHAPTER_KEYWORDS` block, before `_TOC_ENTRY_RE`.
+
+## 2026-02-20 — Add report cache DB lookup and write helpers
+
+**What:** Added `_check_report_cache()` and `_save_report_cache()` async functions to `tools/sina_reports.py` for DB-backed caching of distilled annual/quarterly reports.
+
+**Files:**
+- `tools/sina_reports.py` — modified (two async functions inserted after `_extract_report_year`)
+
+**Details:**
+- `_check_report_cache` queries the `report_cache` table by `(stock_code, report_type, report_year)` and validates the cached filepath exists on disk before returning it; returns `None` on any miss or error.
+- `_save_report_cache` upserts a row into `report_cache`, updating `filepath`, `report_date`, `title`, and `source_url` on conflict; silently swallows exceptions so cache failures never break the main flow.
+- Both functions import `db.get_pool` lazily inside the function body to avoid circular imports at module load time.
+
+## 2026-02-20 — Wire report cache into fetch_company_report
+
+**What:** Replaced `fetch_company_report()` with a new version that adds a fast cache path (DB check before any network fetch) and saves distilled reports to disk + DB on cache miss.
+
+**Files:**
+- `tools/sina_reports.py` — modified (fetch_company_report replaced entirely)
+
+**Details:**
+- Fast path: calls `_extract_report_year` + `_check_report_cache`; on hit, reads the local `.md` file and returns immediately with `summarized_by: "cache"`
+- Slow path (cache miss): fetches detail page, extracts text/tables, calls `_grok_summarize_report`, builds a Markdown document with a metadata header, writes it via `_get_cache_path` + `_save_report_cache`
+- Return dict now includes `cache_path` field on both paths
+- `pdf_url` field retained in slow-path return; omitted on cache-hit path (not re-parsed)
+
+## 2026-02-20 — Annual report distillation and cache system
+
+**What:** Added TOC-aware pre-filtering, structured Grok prompt (Option B), and a local Markdown cache for distilled annual reports — eliminating redundant Sina/Grok fetches and fixing the 80k-char truncation that was cutting off 第十节财务报告.
+
+**Files:**
+- `db.py` — modified: added `report_cache` table and index to SCHEMA_SQL
+- `tools/sina_reports.py` — modified: added `_KEEP/SKIP_CHAPTER_KEYWORDS`, `_TOC_ENTRY_RE`, `_CHAPTER_HEADING_RE`, `_should_keep_chapter`, `_parse_toc`, `_filter_sections_by_toc`, `_get_cache_path`, `_extract_report_year`, `_check_report_cache`, `_save_report_cache`; replaced `_prepare_for_grok`, `_grok_summarize_report`, `fetch_company_report`
+- `output/reports/` — created at runtime per-request via `Path.mkdir(parents=True, exist_ok=True)`
+- `docs/plans/2026-02-20-report-cache.md` — created: implementation plan
+
+**Details:**
+- TOC filter parses the 目录 block (first 400 lines) and removes skip-chapters (公司治理, 环境社会责任, etc.) by chapter name keywords before deduplication — typically 40–60% reduction for yearly reports
+- Keep-keywords checked before skip-keywords so "公司简介和主要财务指标" is correctly kept
+- Grok prompt now requests 5-section structured Markdown with full financial tables preserved (Option B)
+- `fetch_company_report` gains a fast path: cache hit → read local .md file, no HTTP/Grok calls
+- Cache stored at `output/reports/{stock_code}/{year}_{code}_{type}.md`; DB entry in `report_cache` table
+- All cache operations are best-effort (silently fail, never crash the fetch)
+- 第十节财务报告 (previously truncated at 80k chars) now reaches Grok intact
