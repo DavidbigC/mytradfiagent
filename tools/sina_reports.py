@@ -11,6 +11,9 @@ from openai import AsyncOpenAI
 from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
 
 logger = logging.getLogger(__name__)
+from pathlib import Path
+
+_REPORTS_BASE = Path("output/reports")
 
 # Grok client for full-report reading (2M token context window)
 _grok_client: AsyncOpenAI | None = (
@@ -226,6 +229,32 @@ _SKIP_CHAPTER_KEYWORDS = [
     "债券相关",
     "股份变动", "股东情况",
 ]
+
+
+def _get_cache_path(stock_code: str, report_year: int, report_type: str) -> Path:
+    """Return the .md file path for a cached distilled report.
+
+    Structure: output/reports/{stock_code}/{year}_{code}_{type}.md
+    Example:   output/reports/600036/2024_600036_yearly.md
+    One subfolder per stock code — max ~40 files per directory for a 10-year window.
+    """
+    return _REPORTS_BASE / stock_code / f"{report_year}_{stock_code}_{report_type}.md"
+
+
+def _extract_report_year(title: str, report_date: str) -> int:
+    """Extract the reporting period year from report title or filing date.
+
+    Title like '招商银行2024年年度报告' → 2024
+    Title like '某公司2024年三季度报告' → 2024
+    Falls back to the year of report_date if no year found in title.
+    """
+    m = re.search(r"(\d{4})年", title)
+    if m:
+        return int(m.group(1))
+    if report_date and len(report_date) >= 4:
+        return int(report_date[:4])
+    return 2024  # should never reach here
+
 
 # Regex to match TOC entries like "第三节 管理层讨论与分析 ...... 19"
 _TOC_ENTRY_RE = re.compile(
