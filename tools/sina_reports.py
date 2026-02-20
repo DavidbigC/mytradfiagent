@@ -347,6 +347,7 @@ async def _grok_summarize_report(
     Returns None if Grok is unavailable or the call fails.
     """
     if not _grok_client:
+        logger.warning("Grok client not initialised (GROK_API_KEY missing?) — falling back to keyword extraction")
         return None
 
     grok_input = _prepare_for_grok(full_text, focus_keywords)

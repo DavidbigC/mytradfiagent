@@ -1,5 +1,14 @@
 # Changes
 
+## 2026-02-20 — Stop button now cancels server-side agent task
+
+**What:** The Stop button now sends a `POST /api/chat/stop` request that cancels the background asyncio task, so the agent actually stops running rather than just disconnecting the SSE stream.
+
+**Files:**
+- `api_chat.py` — added `POST /api/chat/stop` endpoint that calls `task.cancel()` and emits a stopped event
+- `frontend/src/api.ts` — added `stopAgentRun()` function
+- `frontend/src/components/ChatView.tsx` — `handleStop()` now calls `stopAgentRun` before aborting the SSE connection
+
 ## 2026-02-20 — Prioritize quarterly reports over yearly when reading filings
 
 **What:** Agent now defaults to the most recent quarterly report (Q3→mid→Q1) and only fetches the yearly report as a parallel companion, never alone.

@@ -198,6 +198,19 @@ async def get_active_run(user: dict = Depends(get_current_user)):
     return {"running": False, "conversation_id": None}
 
 
+@router.post("/stop")
+async def stop_agent_run(user: dict = Depends(get_current_user)):
+    """Cancel the running agent task for this user."""
+    user_id: UUID = user["user_id"]
+    run = _active_runs.pop(user_id, None)
+    if not run or run.done:
+        return {"ok": True, "stopped": False}
+    run.task.cancel()
+    run.put({"event": "error", "data": json.dumps({"error": "Stopped by user"})})
+    logger.info(f"Agent run cancelled for user {user_id}")
+    return {"ok": True, "stopped": True}
+
+
 @router.get("/stream")
 async def reconnect_stream(user: dict = Depends(get_current_user)):
     """Reconnect to an in-progress agent run. Replays all buffered events."""

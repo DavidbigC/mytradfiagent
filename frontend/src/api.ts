@@ -221,6 +221,10 @@ export function sendMessage(
 
 // --- Active Run / Reconnect ---
 
+export async function stopAgentRun(token: string): Promise<void> {
+  await fetch(`${BASE}/api/chat/stop`, { method: "POST", headers: headers(token) });
+}
+
 export async function fetchActiveRun(token: string): Promise<{ running: boolean; conversation_id: string | null }> {
   const res = await fetch(`${BASE}/api/chat/active`, { headers: headers(token) });
   if (res.status === 401) throw new Error("UNAUTHORIZED");

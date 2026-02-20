@@ -426,7 +426,7 @@ Question: "浦发银行值得投资吗"
   "entities": [{"type": "stock", "code": "600000", "name": "浦发银行"}],
   "data_plan": [
     {"tool": "fetch_company_report", "args": {"stock_code": "600000", "report_type": "yearly"}},
-    {"tool": "fetch_company_report", "args": {"stock_code": "600000", "report_type": "mid"}},
+    {"tool": "fetch_company_report", "args": {"stock_code": "600000", "report_type": "q3"}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "income", "periods": 8}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "balance", "periods": 4}},
     {"tool": "fetch_stock_financials", "args": {"stock_code": "600000", "statement": "cashflow", "periods": 4}},
@@ -517,7 +517,7 @@ RULES:
 - Output valid JSON only, no other text.
 - The hypothesis must be a concrete, testable statement (not a question).
 - data_plan: max 20 tool calls. Choose tools relevant to the question type.
-- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(mid or q3) for the full annual report (contains revenue breakdown, segment analysis, management discussion). Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends. ALSO include 2-3 web_search calls covering: (1) the company's core business, strategy, and market positioning, (2) the industry/sector outlook and competitive landscape, (3) recent company news, management changes, or strategic moves. These qualitative searches are MANDATORY — financial metrics alone are not sufficient.
+- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(q3) — prefer q3 over mid because it is more recent (covers Jan–Sep vs Jan–Jun). Only fall back to mid if the question is asked before Q3 would be published (i.e., before October). Never use mid when q3 is likely available. Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends. ALSO include 2-3 web_search calls covering: (1) the company's core business, strategy, and market positioning, (2) the industry/sector outlook and competitive landscape, (3) recent company news, management changes, or strategic moves. These qualitative searches are MANDATORY — financial metrics alone are not sufficient.
 - For comparison: include fetch_company_report(yearly) for each stock, plus standard financials for each. Add web_search for industry trends and how the two companies' business models differ.
 - For sector/general: use screener, hotspots, flows, web search for macro and sector-level business trends.
 - pro_framing and con_framing should be concise instructions for the analysts.
@@ -525,6 +525,19 @@ RULES:
 - report_title should be descriptive and in the same language as the question.
 - Match the language of the user's question for hypothesis, framings, and title.
 - Include a "response_language" field: the language the user wrote in (e.g. "中文", "English", "日本語").
+- CRITICAL — stock code accuracy: Never confuse similarly named Chinese companies. Common pairs that are frequently mixed up:
+  - 中国石油 / 中国石油天然气 = PetroChina = 601857 (NOT Sinopec)
+  - 中国石化 / 中国石油化工 = Sinopec = 600028 (NOT PetroChina)
+  - 中国银行 = Bank of China = 601988
+  - 工商银行 = ICBC = 601398
+  - 建设银行 = CCB = 601939
+  - 招商银行 = CMB = 600036
+  - 中国平安 = Ping An = 601318
+  - 中国人寿 = China Life = 601628
+  - 中国移动 = China Mobile = 600941
+  - 中国电信 = China Telecom = 601728
+  - 中国联通 = China Unicom = 600050
+  If the company name is ambiguous or not in this list, prefer fetching the quote first to confirm before building the full plan.
 
 USER QUESTION: __QUESTION__
 """

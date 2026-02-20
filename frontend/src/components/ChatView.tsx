@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../store";
 import { useT } from "../i18n";
-import { sendMessage, fetchMessages, fetchActiveRun, subscribeStream } from "../api";
+import { sendMessage, fetchMessages, fetchActiveRun, subscribeStream, stopAgentRun } from "../api";
 import MessageBubble, { ThinkingData } from "./MessageBubble";
 import StatusIndicator from "./StatusIndicator";
 import ThinkingBlock from "./ThinkingBlock";
@@ -268,6 +268,8 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
   }
 
   function handleStop() {
+    // Cancel the server-side task first
+    if (token) stopAgentRun(token).catch(() => {});
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
