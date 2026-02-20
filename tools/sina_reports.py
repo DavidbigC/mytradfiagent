@@ -661,8 +661,18 @@ async def _grok_summarize_report(
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
+            max_tokens=16_000,
         )
-        return resp.choices[0].message.content or None
+        choice = resp.choices[0]
+        finish_reason = choice.finish_reason
+        if finish_reason == "length":
+            logger.warning(
+                f"Grok output truncated at max_tokens (finish_reason=length); "
+                f"summary may be incomplete"
+            )
+        else:
+            logger.info(f"Grok summarization complete (finish_reason={finish_reason})")
+        return choice.message.content or None
     except Exception as e:
         logger.warning(f"Grok report summarization failed: {e}")
         return None
