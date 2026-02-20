@@ -69,6 +69,22 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS idx_files_conversation ON files(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
 CREATE INDEX IF NOT EXISTS idx_files_filepath ON files(filepath);
+-- Report distillation cache (added 2026-02-20)
+CREATE TABLE IF NOT EXISTS report_cache (
+    id          SERIAL PRIMARY KEY,
+    stock_code  CHAR(6)      NOT NULL,
+    report_type VARCHAR(10)  NOT NULL,
+    report_year SMALLINT     NOT NULL,
+    report_date VARCHAR(12),
+    title       TEXT,
+    filepath    TEXT         NOT NULL,
+    source_url  TEXT,
+    created_at  TIMESTAMPTZ  DEFAULT NOW(),
+    UNIQUE (stock_code, report_type, report_year)
+);
+CREATE INDEX IF NOT EXISTS idx_report_cache_lookup
+    ON report_cache(stock_code, report_type, report_year);
+
 """
 
 
