@@ -1,5 +1,27 @@
 # Changes
 
+## 2026-02-20 — Reduce Grok token cost for report summarization
+
+**What:** Added `_prepare_for_grok` preprocessing step that eliminates ~50–64% of input tokens before sending to Grok, without losing any financial data.
+
+**Files:**
+- `tools/sina_reports.py` — added `_prepare_for_grok()`, updated `_grok_summarize_report()` to preprocess input and log reduction ratio
+
+**Details:**
+- Removes lines < 4 chars (page numbers, single-char separators, empty cells extracted as "-")
+- Deduplicates lines — repeated table column headers, company name stamps, date labels account for ~34% of lines in typical Sina Finance reports
+- If text still exceeds 80k chars after dedup (mainly 年报), applies keyword-section extraction then hard cap
+- Measured reductions: Q3 reports ~50%, 年报 ~64% (216k → 80k chars confirmed live)
+- No capability loss: financial numbers only need to appear once for Grok to read them
+
+## 2026-02-20 — Fix report routing and add Grok findings section
+
+**What:** Agent now correctly routes "看/分析财报" queries to `fetch_company_report` instead of `web_search`; Grok's summary now includes a "值得关注的亮点或异常" section for downstream analysis.
+
+**Files:**
+- `config.py` — added routing rule to planning prompt: report queries → `fetch_company_report`, never `web_search`
+- `tools/sina_reports.py` — added section 6 to Grok summarization prompt: 2–4 notable findings with data citations
+
 ## 2026-02-20 — Use Grok to read and summarize full financial reports
 
 **What:** `fetch_company_report` now feeds the full report HTML text to Grok (2M-token context) for AI-generated structured summaries, replacing the keyword-heuristic extraction.

@@ -108,6 +108,7 @@ def get_planning_prompt() -> str:
   ETF：510050（上证50）、510300（沪深300）、510500（中证500）、588000（科创50）
   银行股：601398（工行）、601939（建行）、601988（中行）、601288（农行）
   在股东名单中查找"中央汇金"/"证金公司"/"汇金资产"，对比相邻期变化推断增减仓方向。
+- **财报/年报/季报/中报阅读**：用户要求"看/查/分析/总结财报"时，必须用 fetch_company_report（不得用 web_search 代替）。该工具内置 Grok 读取完整报告原文并生成结构化摘要。需传入 focus_keywords（从用户问题中提取）。若不知道股票代码，先用 fetch_cn_stock_data 或 web_search 查询。
 - **北向资金**：每日数据，用 fetch_northbound_flow，切勿用 web_search。
 - **A股行情/排名**：用 fetch_multiple_cn_stocks 或 screen_cn_stocks，切勿用 web_search。
 - **深度单股分析**：并行调用 fetch_stock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history，同时 dispatch_subagents 抓取股吧情绪。

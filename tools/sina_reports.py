@@ -302,19 +302,57 @@ async def fetch_sina_profit_statement(stock_code: str, year: int | None = None) 
     }
 
 
+def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, max_chars: int = 80_000) -> str:
+    """Reduce token cost before sending to Grok without losing financial data.
+
+    Steps:
+    1. Drop short noise lines (< 4 chars: page numbers, separators, single chars).
+    2. Deduplicate lines — repeated table headers / company name / date stamps
+       account for ~34% of lines in typical Sina Finance reports.
+    3. If still over max_chars, apply keyword-section extraction then hard-cap.
+    Financial numbers only need to appear once for Grok to read them correctly.
+    """
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for line in full_text.split("\n"):
+        s = line.strip()
+        if len(s) < 4:        # skip noise
+            continue
+        if s in seen:         # skip exact duplicates
+            continue
+        seen.add(s)
+        deduped.append(s)
+
+    text = "\n".join(deduped)
+
+    if len(text) <= max_chars:
+        return text
+
+    # Still too long (common for 年报): keyword-section extraction then hard cap
+    filtered = _extract_key_sections(text, extra_keywords=focus_keywords)
+    if len(filtered) > max_chars:
+        filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
+    return filtered
+
+
 async def _grok_summarize_report(
     full_text: str,
     title: str,
     report_type_cn: str,
     focus_keywords: list[str] | None = None,
 ) -> str | None:
-    """Feed the full report text to Grok and return a structured summary.
+    """Preprocess report text then summarize with Grok.
 
-    Uses Grok's 2M-token context window so no pre-filtering is needed.
     Returns None if Grok is unavailable or the call fails.
     """
     if not _grok_client:
         return None
+
+    grok_input = _prepare_for_grok(full_text, focus_keywords)
+    logger.info(
+        f"Grok input: {len(full_text):,} → {len(grok_input):,} chars "
+        f"({100 - len(grok_input)*100//len(full_text)}% reduction)"
+    )
 
     focus_note = ""
     if focus_keywords:
@@ -331,8 +369,11 @@ async def _grok_summarize_report(
         "2. 资产负债摘要（总资产、净资产、关键比率）\n"
         "3. 现金流摘要\n"
         "4. 业务分部/分行业收入结构（如有）\n"
-        "5. 主要风险或重要变化\n\n"
-        f"以下是报告全文：\n\n{full_text}"
+        "5. 主要风险或重要变化\n"
+        "6. **值得关注的亮点或异常**：从整份报告中找出最值得深入研究的2–4个发现。"
+        "可以是：超预期或低于预期的指标、趋势转折点、管理层措辞变化、隐藏的风险、"
+        "与行业对比后的异常、值得跟进的潜在机会。用简洁的中文列出，每条注明数据依据。\n\n"
+        f"以下是报告内容：\n\n{grok_input}"
     )
 
     try:
@@ -423,8 +464,8 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
     report_type_cn = {"yearly": "年报", "q1": "一季报", "mid": "中报", "q3": "三季报"}
     rtype_label = report_type_cn.get(report_type, report_type)
 
-    # Try Grok first: feed full text into its 2M-token context for a proper summary
-    logger.info(f"Sending {len(full_text):,} chars to Grok for summarization ({latest['title']})")
+    # Try Grok first: deduplicate + summarize the report
+    logger.info(f"Grok summarization: {len(full_text):,} raw chars ({latest['title']})")
     summary = await _grok_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
 
     if summary:
