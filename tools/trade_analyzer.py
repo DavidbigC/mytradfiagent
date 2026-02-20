@@ -210,17 +210,19 @@ Rules:
 === ORIGINAL DATA FOR REFERENCE ===
 {data_pack}"""
 
-_JUDGE = """You are a quantitative portfolio committee chair. You have received analysis from 4 anonymous analysts — 2 supporting a hypothesis, 2 rejecting it — followed by their cross-examination.
+_JUDGE = """You are a portfolio committee chair. You have received analysis from 4 anonymous analysts — 2 supporting a hypothesis, 2 rejecting it — followed by their cross-examination.
 
 **Hypothesis under review (H₀): {hypothesis}**
 
-Your task: Determine whether the data supports or rejects H₀, based SOLELY on factual accuracy and data completeness.
+Your task: Determine whether the overall weight of evidence supports or rejects H₀. Consider both quantitative financial data AND qualitative business analysis — industry positioning, competitive dynamics, growth drivers, strategic risks. A one-dimensional purely numerical argument is weaker than one that integrates business context.
 
 Evaluation criteria (in order of importance):
-1. DATA ACCURACY: Which analysts cited verifiable numbers? Flag any claims that lack specific figures.
-2. COMPLETENESS: Which side addressed more analysis dimensions with actual data?
-3. CONSISTENCY: Do the cited numbers agree with each other and with the raw data summary?
-4. CROSS-EXAMINATION: Did the rebuttals identify real data errors, or were they rhetorical?
+1. ANALYTICAL BREADTH: Which side addressed more dimensions — financials, business model, industry trends, competitive position, management quality, macro context? Prefer the side with richer, multi-angle analysis.
+2. DIRECTIONAL ACCURACY: Which side's overall thesis is better supported by the available evidence, even if individual numbers are imprecise?
+3. DATA QUALITY: Note any specific numbers that appear clearly wrong or unsupported, but treat these as signal noise rather than grounds to dismiss an argument. A correct analytical direction with a minor numerical error is still a valid argument.
+4. CROSS-EXAMINATION: Did the rebuttals surface genuine analytical blind spots, or were they focused on nitpicking numbers?
+
+On data errors: If an analyst cites an inaccurate figure, flag it briefly. Do NOT let a single numerical discrepancy reverse your verdict — evaluate whether the underlying analytical point still holds even if the exact number is corrected.
 
 Disregard: emotional language, rhetorical flourish, unsubstantiated predictions, appeals to market sentiment.
 
@@ -431,7 +433,10 @@ Question: "浦发银行值得投资吗"
     {"tool": "fetch_cn_stock_data", "args": {"symbol": "600000", "info_type": "quote"}},
     {"tool": "fetch_stock_capital_flow", "args": {"stock_code": "600000", "days": 20}},
     {"tool": "fetch_top_shareholders", "args": {"stock_code": "600000", "periods": 2}},
-    {"tool": "fetch_dividend_history", "args": {"stock_code": "600000"}}
+    {"tool": "fetch_dividend_history", "args": {"stock_code": "600000"}},
+    {"tool": "web_search", "args": {"query": "浦发银行 主营业务 战略布局 2025"}},
+    {"tool": "web_search", "args": {"query": "中国银行业 行业趋势 竞争格局 2025"}},
+    {"tool": "web_search", "args": {"query": "浦发银行 近期新闻 业务拓展 风险"}}
   ],
   "pro_framing": "支持假设：浦发银行当前估值下值得投资",
   "con_framing": "反对假设：浦发银行当前不值得投资",
@@ -512,9 +517,9 @@ RULES:
 - Output valid JSON only, no other text.
 - The hypothesis must be a concrete, testable statement (not a question).
 - data_plan: max 20 tool calls. Choose tools relevant to the question type.
-- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(mid or q3) for the full annual report (contains revenue breakdown, segment analysis, management discussion). Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends.
-- For comparison: include fetch_company_report(yearly) for each stock, plus the standard tools for each.
-- For sector/general: use screener, hotspots, flows, and web search.
+- For single_stock: ALWAYS include fetch_company_report(yearly) + fetch_company_report(mid or q3) for the full annual report (contains revenue breakdown, segment analysis, management discussion). Then add income/balance/cashflow/quote/capital_flow/shareholders/dividends. ALSO include 2-3 web_search calls covering: (1) the company's core business, strategy, and market positioning, (2) the industry/sector outlook and competitive landscape, (3) recent company news, management changes, or strategic moves. These qualitative searches are MANDATORY — financial metrics alone are not sufficient.
+- For comparison: include fetch_company_report(yearly) for each stock, plus standard financials for each. Add web_search for industry trends and how the two companies' business models differ.
+- For sector/general: use screener, hotspots, flows, web search for macro and sector-level business trends.
 - pro_framing and con_framing should be concise instructions for the analysts.
 - verdict_options must have exactly 3 options.
 - report_title should be descriptive and in the same language as the question.
