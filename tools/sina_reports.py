@@ -616,35 +616,53 @@ async def _grok_summarize_report(
 
 
 async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
-    """Fetch the latest financial report for a Chinese A-share company."""
+    """Fetch the latest financial report for a Chinese A-share company.
+
+    Fast path: check report_cache DB → if hit, read local .md file and return.
+    Slow path: fetch from Sina Finance, distil with Grok, save to disk + DB, return.
+    """
     code = stock_code.strip()
     if len(code) != 6 or not code.isdigit():
         return {"error": f"Invalid stock code: {code}. Must be 6 digits like '002028'."}
-
     if report_type not in REPORT_URLS:
         return {"error": f"Invalid report_type: {report_type}. Must be one of: yearly, q1, mid, q3"}
 
-    # Step 1: Fetch bulletin listing page
-    listing_path = REPORT_URLS[report_type].format(code=code)
-    listing_url = SINA_BASE + listing_path
+    report_type_cn_map = {"yearly": "年报", "q1": "一季报", "mid": "中报", "q3": "三季报"}
+    rtype_label = report_type_cn_map.get(report_type, report_type)
 
+    # ── Step 1: Fetch bulletin listing to get latest report metadata ──────────
+    listing_url = SINA_BASE + REPORT_URLS[report_type].format(code=code)
     try:
         listing_html = await _fetch_page(listing_url)
     except Exception as e:
         return {"error": f"Failed to fetch bulletin listing: {e}", "url": listing_url}
 
-    # Step 2: Parse to find the latest report
     reports = _parse_bulletin_list(listing_html)
     if not reports:
+        return {"error": f"No {report_type} reports found for stock {code}", "listing_url": listing_url}
+
+    latest = reports[0]
+    logger.info(f"Latest {report_type} report for {code}: {latest['title']} ({latest['date']})")
+
+    # ── Step 2: Cache check ───────────────────────────────────────────────────
+    report_year = _extract_report_year(latest["title"], latest["date"])
+    cached_filepath = await _check_report_cache(code, report_type, report_year)
+    if cached_filepath:
+        logger.info(f"Cache hit: {cached_filepath}")
+        content = Path(cached_filepath).read_text(encoding="utf-8")
         return {
-            "error": f"No {report_type} reports found for stock {code}",
-            "listing_url": listing_url,
+            "stock_code": code,
+            "report_type": rtype_label,
+            "title": latest["title"],
+            "date": latest["date"],
+            "report_url": latest["url"],
+            "content": content,
+            "summarized_by": "cache",
+            "cache_path": cached_filepath,
+            "all_reports": [{"date": r["date"], "title": r["title"]} for r in reports[:5]],
         }
 
-    latest = reports[0]  # First one is the latest
-    logger.info(f"Found latest {report_type} report for {code}: {latest['title']} ({latest['date']})")
-
-    # Step 3: Fetch the report detail page
+    # ── Step 3: Cache miss — fetch and distil ─────────────────────────────────
     try:
         detail_html = await _fetch_page(latest["url"])
     except Exception as e:
@@ -655,17 +673,12 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
             "title": latest["title"],
         }
 
-    # Step 4: Extract content
     soup = BeautifulSoup(detail_html, "html.parser")
-
-    # Remove scripts/styles
     for tag in soup(["script", "style", "nav", "footer", "header", "iframe"]):
         tag.decompose()
 
-    # Get text content
     body_text = soup.get_text(separator="\n", strip=True)
 
-    # Extract tables
     tables = []
     for table in soup.find_all("table"):
         rows = []
@@ -676,30 +689,47 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
         if rows:
             tables.append("\n".join(rows))
 
-    # Combine text with tables
     full_text = body_text
     if tables:
         full_text += "\n\n=== FINANCIAL TABLES ===\n"
-        for i, t in enumerate(tables[:20]):  # Limit to 20 tables
+        for i, t in enumerate(tables[:20]):
             full_text += f"\n--- Table {i+1} ---\n{t}\n"
 
-    # Extract PDF link
     pdf_link = _extract_pdf_link(detail_html)
 
-    report_type_cn = {"yearly": "年报", "q1": "一季报", "mid": "中报", "q3": "三季报"}
-    rtype_label = report_type_cn.get(report_type, report_type)
-
-    # Try Grok first: deduplicate + summarize the report
-    logger.info(f"Grok summarization: {len(full_text):,} raw chars ({latest['title']})")
+    logger.info(f"Distilling {len(full_text):,} chars for {latest['title']}")
     summary = await _grok_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
 
     if summary:
-        content = summary
+        distilled_content = summary
         summarized_by = "grok"
     else:
-        # Fallback: keyword-based section extraction
-        content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
+        distilled_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
         summarized_by = "keyword_extraction"
+
+    # ── Step 4: Build full MD with metadata header and save to cache ──────────
+    md_header = (
+        f"# {latest['title']}\n\n"
+        f"**报告期**: {report_year} {rtype_label}  \n"
+        f"**股票代码**: {code}  \n"
+        f"**发布日期**: {latest['date']}  \n"
+        f"**来源**: {latest['url']}  \n"
+        f"**PDF**: {pdf_link or '暂无'}  \n\n"
+        f"---\n\n"
+    )
+    full_md = md_header + distilled_content
+
+    cache_path = _get_cache_path(code, report_year, report_type)
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(full_md, encoding="utf-8")
+        await _save_report_cache(
+            code, report_type, report_year,
+            latest["date"], latest["title"], str(cache_path), latest["url"],
+        )
+        logger.info(f"Report cached to {cache_path}")
+    except Exception as e:
+        logger.warning(f"Failed to write cache: {e}")
 
     return {
         "stock_code": code,
@@ -708,7 +738,8 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
         "date": latest["date"],
         "report_url": latest["url"],
         "pdf_url": pdf_link,
-        "content": content,
+        "content": full_md,
         "summarized_by": summarized_by,
+        "cache_path": str(cache_path),
         "all_reports": [{"date": r["date"], "title": r["title"]} for r in reports[:5]],
     }
