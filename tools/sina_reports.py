@@ -584,7 +584,24 @@ def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, m
     if len(text) <= max_chars:
         return text
 
-    # Step 3: Keyword-section extraction + hard cap (fallback for very long reports)
+    # Step 3a: For large-context Grok path — head + tail to capture both
+    # management discussion (front of report) and financial statements (back).
+    # Annual reports: 节三管理层讨论 is in the first half; 节十财务报告 is the last ~20%.
+    if max_chars >= 150_000:
+        head = max_chars // 3          # ~1/3 for intro + management discussion start
+        tail = max_chars - head        # ~2/3 for financial statements at the end
+        sep = (
+            "\n\n...[中间章节已省略（公司治理/环境责任/重要事项/股东情况），"
+            "以下为财务报告章节]...\n\n"
+        )
+        result = text[:head] + sep + text[-tail:]
+        logger.info(
+            f"Head+tail split: {len(text):,} → {len(result):,} chars "
+            f"(head={head:,}, tail={tail:,})"
+        )
+        return result
+
+    # Step 3b: Keyword-section extraction + hard cap (fallback for non-Grok paths)
     filtered = _extract_key_sections(text, extra_keywords=focus_keywords)
     if len(filtered) > max_chars:
         filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
@@ -605,10 +622,11 @@ async def _grok_summarize_report(
         logger.warning("Grok client not initialised (GROK_API_KEY missing?) — falling back to keyword extraction")
         return None
 
-    # Grok supports 2M-token context (~1.5M chars). Pass a large cap so only
-    # TOC section filtering + dedup run; the hard-cap keyword-scramble fallback
-    # is reserved for non-Grok paths.
-    grok_input = _prepare_for_grok(full_text, focus_keywords, max_chars=1_500_000)
+    # Send at most 250k chars to Grok: TOC filter + dedup first, then head+tail
+    # split so both management discussion (front) and financial tables (back)
+    # are preserved. This keeps input ~150k tokens — well within Grok's 2M
+    # context and small enough that the model generates a full output response.
+    grok_input = _prepare_for_grok(full_text, focus_keywords, max_chars=250_000)
     logger.info(
         f"Grok input: {len(full_text):,} → {len(grok_input):,} chars "
         f"({100 - len(grok_input) * 100 // max(len(full_text), 1)}% reduction)"
@@ -665,14 +683,13 @@ async def _grok_summarize_report(
         )
         choice = resp.choices[0]
         finish_reason = choice.finish_reason
+        content = choice.message.content or ""
+        logger.info(
+            f"Grok response: {len(content):,} chars, finish_reason={finish_reason}"
+        )
         if finish_reason == "length":
-            logger.warning(
-                f"Grok output truncated at max_tokens (finish_reason=length); "
-                f"summary may be incomplete"
-            )
-        else:
-            logger.info(f"Grok summarization complete (finish_reason={finish_reason})")
-        return choice.message.content or None
+            logger.warning("Grok output hit max_tokens — summary may be incomplete")
+        return content or None
     except Exception as e:
         logger.warning(f"Grok report summarization failed: {e}")
         return None
