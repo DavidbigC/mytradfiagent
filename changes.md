@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-02-20 — Fix MiniMax error 2013 (incomplete tool-call sequences)
+
+**What:** Replaced the front-only trim in `load_recent_messages()` with a full-array scan that drops incomplete or orphaned tool-call sequences anywhere in message history.
+
+**Files:**
+- `accounts.py` — modified `load_recent_messages()`, added `_repair_tool_call_sequence()`
+
+**Details:**
+- Root cause: when user cancels an agent run, the `role:assistant` message with `tool_calls` is saved to DB but the `role:tool` results are not — leaving a corrupt sequence in history
+- Old code only trimmed orphaned messages at the front of the window; sequences buried in the middle were passed through intact, triggering MiniMax error 2013
+- `_repair_tool_call_sequence()` walks the full array: drops any assistant+tool_calls whose expected IDs don't match the immediately-following tool results, and drops any orphaned tool messages
+
 ## 2026-02-20 — Fix TOC parser for real CN annual report format
 
 **What:** Fixed three bugs that caused `_parse_toc()` to return [] on every real annual report, falling back to the 80k hard-cap with no TOC filtering.
