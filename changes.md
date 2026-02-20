@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-02-20 — Prioritize quarterly reports over yearly when reading filings
+
+**What:** Agent now defaults to the most recent quarterly report (Q3→mid→Q1) and only fetches the yearly report as a parallel companion, never alone.
+
+**Files:**
+- `config.py` — updated planning prompt routing rule with explicit priority order and "切勿单独调用年报" constraint
+- `tools/sina_reports.py` — updated `FETCH_COMPANY_REPORT_SCHEMA` description to reinforce the same rule at the tool level
+
 ## 2026-02-20 — Reduce Grok token cost for report summarization
 
 **What:** Added `_prepare_for_grok` preprocessing step that eliminates ~50–64% of input tokens before sending to Grok, without losing any financial data.

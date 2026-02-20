@@ -32,14 +32,15 @@ FETCH_COMPANY_REPORT_SCHEMA = {
     "function": {
         "name": "fetch_company_report",
         "description": (
-            "Fetch the latest financial report for a Chinese A-share company from Sina Finance. "
-            "Returns the report content (key financial sections) and PDF download link. "
-            "Use this to analyze a company's actual financial filings — income statement, "
-            "balance sheet, cash flow, business overview, etc. "
-            "IMPORTANT: Always pass focus_keywords based on what the user is asking about. "
-            "E.g. for bank analysis: ['不良率', '净息差', '拨备覆盖率', '资产质量', '贷款']; "
-            "for tech companies: ['研发', '毛利率', '用户', '增长']; "
-            "for retail: ['同店', '库存', '门店', '毛利']."
+            "Fetch and summarize a financial report for a Chinese A-share company (Sina Finance). "
+            "Uses Grok to read the full report and return a structured Markdown summary with key metrics, "
+            "balance sheet, cash flow, segment breakdown, and notable findings. "
+            "PRIORITY: Always call with the most recent quarterly report first (q3 > mid > q1). "
+            "If yearly context is also needed, call this tool TWICE in parallel — once for the quarterly "
+            "and once for yearly. Never call with yearly alone. "
+            "IMPORTANT: Always pass focus_keywords derived from the user's question. "
+            "E.g. banks: ['不良率', '净息差', '拨备覆盖率']; tech: ['研发', '毛利率', '增长']; "
+            "retail: ['同店', '库存', '门店', '毛利']."
         ),
         "parameters": {
             "type": "object",
