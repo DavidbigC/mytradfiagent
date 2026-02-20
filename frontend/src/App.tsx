@@ -12,8 +12,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/" /> : <LoginPage />} />
       <Route path="/*" element={token ? <ChatLayout /> : <Navigate to="/login" />} />
-      <Route path="/guidance" element={token ? <GuidancePage /> : <Navigate to="/login" />} />
-      <Route path="/showcase" element={token ? <ShowcasePage /> : <Navigate to="/login" />} />
+      <Route path="/guidance" element={<GuidancePage />} />
+      <Route path="/showcase" element={<ShowcasePage />} />
     </Routes>
   );
 }

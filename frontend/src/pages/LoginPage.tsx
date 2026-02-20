@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../store";
 import { apiLogin } from "../api";
 import { useT } from "../i18n";
@@ -56,6 +56,15 @@ export default function LoginPage() {
             {loading ? "..." : t("login.signIn")}
           </button>
         </form>
+
+        <div style={{ marginTop: "24px", display: "flex", justifyContent: "center", gap: "24px" }}>
+          <Link to="/guidance" style={{ color: "var(--accent)", textDecoration: "none", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "6px" }}>
+            📚 {t("sidebar.guide")}
+          </Link>
+          <Link to="/showcase" style={{ color: "var(--accent)", textDecoration: "none", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "6px" }}>
+            ✨ {t("sidebar.showcase")}
+          </Link>
+        </div>
       </div>
     </div>
   );

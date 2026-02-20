@@ -1,5 +1,33 @@
 # Changes
 
+## 2026-02-20 — Use Grok to read and summarize full financial reports
+
+**What:** `fetch_company_report` now feeds the full report HTML text to Grok (2M-token context) for AI-generated structured summaries, replacing the keyword-heuristic extraction.
+
+**Files:**
+- `tools/sina_reports.py` — added `_grok_client`, `_grok_summarize_report()`, updated `fetch_company_report()` to try Grok first with keyword-extraction fallback
+
+**Details:**
+- `_grok_summarize_report` sends the full scraped text + `focus_keywords` to `grok-4-1-fast-non-reasoning` via `chat.completions`
+- Prompt instructs Grok to produce a Markdown report with tables covering: core metrics, balance sheet, cash flow, segment breakdown, risks
+- `focus_keywords` (e.g. `['不良率', '净息差', '拨备覆盖率']`) are included in the prompt so Grok pays special attention to them
+- Return dict now includes `"summarized_by": "grok" | "keyword_extraction"` for transparency
+- Falls back to `_extract_key_sections` if Grok is not configured or the call fails
+
+## 2026-02-20 — Use Grok live search for web_search tool
+
+**What:** Route `web_search` through Grok's built-in live search (xAI API) when `GROK_API_KEY` is set, with automatic DuckDuckGo fallback.
+
+**Files:**
+- `config.py` — added `GROK_API_KEY`, `GROK_BASE_URL`, `GROK_MODEL_NOREASONING`, `GROK_MODEL_REASONING`
+- `tools/web.py` — added `_grok_client` (AsyncOpenAI pointing at xAI), `_grok_web_search()`, updated `web_search()` to prefer Grok
+
+**Details:**
+- xAI API is OpenAI-compatible; live search enabled via `extra_body={"search_parameters": {"mode": "auto"}}`
+- Grok returns the answer in `choices[0].message.content` and citation URLs in a top-level `citations` list
+- Falls back to DuckDuckGo silently if Grok is not configured or the call fails
+- Uses `grok-4-1-fast-non-reasoning` model (configurable via `GROK_MODEL_noreasoning` env var)
+
 ## 2026-02-19 — Frontend reconnect for background agent runs
 
 **What:** Added auto-reconnect logic so the UI reattaches to an in-progress agent run after a network drop or app backgrounding.

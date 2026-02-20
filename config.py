@@ -14,6 +14,10 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "davidc")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY")
 QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-plus")
+GROK_API_KEY = os.getenv("GROK_API_KEY")
+GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
+GROK_MODEL_NOREASONING = os.getenv("GROK_MODEL_noreasoning", "grok-4-1-fast-non-reasoning")
+GROK_MODEL_REASONING = os.getenv("GROK_MODEL_reasoning", "grok-4-1-fast-reasoning")
 
 
 def get_system_prompt() -> str:

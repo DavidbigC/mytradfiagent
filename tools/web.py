@@ -2,6 +2,8 @@ import asyncio
 import logging
 import httpx
 from bs4 import BeautifulSoup
+from openai import AsyncOpenAI
+from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
 
 try:
     from ddgs import DDGS
@@ -27,6 +29,11 @@ _JS_HEAVY_DOMAINS = [
 ]
 
 logger = logging.getLogger(__name__)
+
+# Grok client for live web search — created once at import if key is present
+_grok_client: AsyncOpenAI | None = (
+    AsyncOpenAI(api_key=GROK_API_KEY, base_url=GROK_BASE_URL) if GROK_API_KEY else None
+)
 
 WEB_SEARCH_SCHEMA = {
     "type": "function",
@@ -74,7 +81,39 @@ def _ddg_search_sync(query: str, max_results: int = 5) -> dict:
     }
 
 
+async def _grok_web_search(query: str) -> dict:
+    """Use Grok Responses API with live web_search tool. Falls back to DuckDuckGo on error."""
+    try:
+        response = await _grok_client.responses.create(
+            model=GROK_MODEL_NOREASONING,
+            input=[{"role": "user", "content": query}],
+            tools=[{"type": "web_search"}],
+        )
+        # Find the message output item
+        content = ""
+        sources = []
+        for item in response.output:
+            if item.type == "message":
+                for c in item.content:
+                    if c.type == "output_text":
+                        content = c.text
+                        # Citations come back as url_citation annotations
+                        for ann in getattr(c, "annotations", []):
+                            if ann.type == "url_citation":
+                                sources.append({"url": ann.url, "title": ann.title or ""})
+                        break
+                break
+        logger.info(f"Grok web search: {len(sources)} citations for '{query[:60]}'")
+        return {"answer": content, "sources": sources}
+    except Exception as e:
+        logger.warning(f"Grok web search failed ({e}), falling back to DuckDuckGo")
+        return await asyncio.to_thread(_ddg_search_sync, query)
+
+
 async def web_search(query: str) -> dict:
+    """Search the web. Uses Grok live search if configured, otherwise DuckDuckGo."""
+    if _grok_client:
+        return await _grok_web_search(query)
     return await asyncio.to_thread(_ddg_search_sync, query)
 
 

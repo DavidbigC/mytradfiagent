@@ -7,8 +7,15 @@ import re
 import logging
 import httpx
 from bs4 import BeautifulSoup
+from openai import AsyncOpenAI
+from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
 
 logger = logging.getLogger(__name__)
+
+# Grok client for full-report reading (2M token context window)
+_grok_client: AsyncOpenAI | None = (
+    AsyncOpenAI(api_key=GROK_API_KEY, base_url=GROK_BASE_URL) if GROK_API_KEY else None
+)
 
 SINA_BASE = "https://vip.stock.finance.sina.com.cn"
 
@@ -295,6 +302,53 @@ async def fetch_sina_profit_statement(stock_code: str, year: int | None = None) 
     }
 
 
+async def _grok_summarize_report(
+    full_text: str,
+    title: str,
+    report_type_cn: str,
+    focus_keywords: list[str] | None = None,
+) -> str | None:
+    """Feed the full report text to Grok and return a structured summary.
+
+    Uses Grok's 2M-token context window so no pre-filtering is needed.
+    Returns None if Grok is unavailable or the call fails.
+    """
+    if not _grok_client:
+        return None
+
+    focus_note = ""
+    if focus_keywords:
+        focus_note = f"\n请特别关注以下指标：{', '.join(focus_keywords)}"
+
+    system = (
+        "你是一名专业的卖方金融分析师。请阅读以下中文财务报告全文，用中文撰写结构化摘要。"
+        "格式：Markdown，关键数据用表格，数字精确，注明所属报告期。不要省略关键财务数据。"
+    )
+    prompt = (
+        f"报告：{title}（{report_type_cn}）{focus_note}\n\n"
+        "请提取并整理：\n"
+        "1. 核心财务指标（营收、净利润、EPS 及同比变化）\n"
+        "2. 资产负债摘要（总资产、净资产、关键比率）\n"
+        "3. 现金流摘要\n"
+        "4. 业务分部/分行业收入结构（如有）\n"
+        "5. 主要风险或重要变化\n\n"
+        f"以下是报告全文：\n\n{full_text}"
+    )
+
+    try:
+        resp = await _grok_client.chat.completions.create(
+            model=GROK_MODEL_NOREASONING,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return resp.choices[0].message.content or None
+    except Exception as e:
+        logger.warning(f"Grok report summarization failed: {e}")
+        return None
+
+
 async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
     """Fetch the latest financial report for a Chinese A-share company."""
     code = stock_code.strip()
@@ -363,21 +417,32 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
         for i, t in enumerate(tables[:20]):  # Limit to 20 tables
             full_text += f"\n--- Table {i+1} ---\n{t}\n"
 
-    # Extract key sections
-    key_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
-
     # Extract PDF link
     pdf_link = _extract_pdf_link(detail_html)
 
     report_type_cn = {"yearly": "年报", "q1": "一季报", "mid": "中报", "q3": "三季报"}
+    rtype_label = report_type_cn.get(report_type, report_type)
+
+    # Try Grok first: feed full text into its 2M-token context for a proper summary
+    logger.info(f"Sending {len(full_text):,} chars to Grok for summarization ({latest['title']})")
+    summary = await _grok_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
+
+    if summary:
+        content = summary
+        summarized_by = "grok"
+    else:
+        # Fallback: keyword-based section extraction
+        content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
+        summarized_by = "keyword_extraction"
 
     return {
         "stock_code": code,
-        "report_type": report_type_cn.get(report_type, report_type),
+        "report_type": rtype_label,
         "title": latest["title"],
         "date": latest["date"],
         "report_url": latest["url"],
         "pdf_url": pdf_link,
-        "content": key_content,
+        "content": content,
+        "summarized_by": summarized_by,
         "all_reports": [{"date": r["date"], "title": r["title"]} for r in reports[:5]],
     }
