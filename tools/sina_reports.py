@@ -605,7 +605,10 @@ async def _grok_summarize_report(
         logger.warning("Grok client not initialised (GROK_API_KEY missing?) — falling back to keyword extraction")
         return None
 
-    grok_input = _prepare_for_grok(full_text, focus_keywords)
+    # Grok supports 2M-token context (~1.5M chars). Pass a large cap so only
+    # TOC section filtering + dedup run; the hard-cap keyword-scramble fallback
+    # is reserved for non-Grok paths.
+    grok_input = _prepare_for_grok(full_text, focus_keywords, max_chars=1_500_000)
     logger.info(
         f"Grok input: {len(full_text):,} → {len(grok_input):,} chars "
         f"({100 - len(grok_input) * 100 // max(len(full_text), 1)}% reduction)"
