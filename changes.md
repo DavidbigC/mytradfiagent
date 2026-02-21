@@ -1,5 +1,40 @@
 # Changes
 
+## 2026-02-21 — Market data pipeline (hourly OHLCV for A-shares, plain PostgreSQL)
+
+**What:** Dropped TimescaleDB in favour of plain PostgreSQL 17 (local). Fixed BaoStock API usage (`query_stock_basic()` takes no `fields` arg; `time` field is `YYYYMMDDHHmmssSSS` not `HH:MM:SS`). Pipeline verified end-to-end with 5 stocks.
+
+**Files:**
+- `data/setup_db.py` — plain PostgreSQL, BRIN index on ts, btree on (code, ts)
+- `data/ingest_ohlcv.py` — fixed stock list query and timestamp parsing
+- `data/update_ohlcv.py` — same fixes; added MARKETDATA_URL env var support
+- `requirements.txt` — added baostock, psycopg2-binary
+
+**Details:**
+- Use `MARKETDATA_URL=postgresql://davidc@localhost:5432/marketdata` in .env
+- BaoStock fields: `[code, code_name, ipoDate, outDate, type, status]` — type at index 4, status at index 5
+- Time field slicing: `t[8:10]:t[10:12]:t[12:14]` → HH:MM:SS
+
+---
+
+## 2026-02-21 — Market data pipeline (hourly OHLCV for A-shares)
+
+**What:** Added a standalone data pipeline to store 5 years of hourly OHLCV data for 5000+ A-share stocks in a separate PostgreSQL + TimescaleDB `marketdata` database, for use by future backtesting scripts.
+
+**Files:**
+- `data/setup_db.py` — created: one-time script to create the `marketdata` DB, enable TimescaleDB, create `ohlcv_1h` hypertable with indexes and 7-day compression policy
+- `data/ingest_ohlcv.py` — created: bulk historical load (2020–today), resumable via `.ingest_checkpoint` file, batch inserts with ON CONFLICT DO NOTHING
+- `data/update_ohlcv.py` — created: daily incremental update script (designed for cron at 16:30 CST), fetches from last ingested timestamp forward
+- `requirements.txt` — modified: added `baostock` and `psycopg2-binary`
+
+**Details:**
+- Data source: BaoStock (`frequency="60"` for 60-min bars), no API key required
+- Stock list fetched directly from BaoStock (`query_stock_basic`), no dependency on main DB
+- ~25M estimated rows (5yr × 244 days × 4 bars × 5000 stocks), ~500MB–1GB compressed
+- BaoStock code format: `sh.600036` → stored as `code="600036"`, `exchange="SH"`
+- Timestamps stored as `TIMESTAMPTZ` with `+08:00` offset (CST)
+- Cron entry in `update_ohlcv.py` comments: `30 8 * * 1-5` (08:30 UTC = 16:30 CST)
+
 ## 2026-02-21 — Chitchat routing at planning stage
 
 **What:** Agent now classifies intent at the planning turn and short-circuits for non-financial queries, returning a direct friendly answer without entering the agentic tool loop.

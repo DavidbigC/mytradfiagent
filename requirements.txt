@@ -18,3 +18,5 @@ python-multipart
 fpdf2
 playwright
 pypinyin
+baostock
+psycopg2-binary
