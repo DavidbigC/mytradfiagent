@@ -318,7 +318,13 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       voiceChunksRef.current = [];
-      const mr = new MediaRecorder(stream);
+
+      // Pick the best supported MIME type — iOS Safari only supports audio/mp4
+      const preferredTypes = ["audio/webm", "audio/mp4", "audio/ogg"];
+      const mimeType = preferredTypes.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+      const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mr;
 
       mr.ondataavailable = (e) => voiceChunksRef.current.push(e.data);
@@ -327,7 +333,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
         setVoiceState("transcribing");
         try {
           const fd = new FormData();
-          fd.append("file", new Blob(voiceChunksRef.current), "audio.webm");
+          fd.append("file", new Blob(voiceChunksRef.current, { type: mimeType || "audio/webm" }), `audio.${ext}`);
           const res = await fetch("/api/chat/stt", {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
@@ -355,8 +361,12 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
 
       mr.start();
       setVoiceState("recording");
-    } catch (_err) {
+    } catch (err: any) {
       setVoiceState("idle");
+      // NotAllowedError = mic permission denied or non-HTTPS context
+      if (err?.name === "NotAllowedError" || err?.name === "SecurityError") {
+        alert("Microphone access denied. Make sure the app is served over HTTPS when using a mobile device.");
+      }
     }
   }
 

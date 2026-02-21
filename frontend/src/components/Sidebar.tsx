@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store";
-import { useT } from "../i18n";
+import { useT, useTheme } from "../i18n";
 import AdminPanel from "./AdminPanel";
 import ReportsPanel from "./ReportsPanel";
 
@@ -26,6 +26,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useT();
+  const { theme, toggleTheme } = useTheme();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const isAdmin = user?.username === "davidc";
@@ -34,6 +35,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
     <>
       {open && <div className="sidebar-overlay" onClick={onClose} />}
       <aside className={`sidebar ${open ? "open" : ""}`}>
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-name">金融研究智能体</span>
+        </div>
         <div className="sidebar-header">
           <button className="new-chat-btn" onClick={onNew}>{t("sidebar.newChat")}</button>
           <button className="debate-btn" onClick={onDebate}>{t("sidebar.debate")}</button>
@@ -59,43 +63,11 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           ))}
         </div>
 
-        <div className="sidebar-links" style={{ padding: "0 16px 16px 16px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <button
-            onClick={() => navigate("/guidance")}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              textAlign: "left",
-              padding: "8px 0",
-              cursor: "pointer",
-              fontSize: "0.9rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px"
-            }}
-            onMouseOver={(e) => e.currentTarget.style.color = "var(--accent)"}
-            onMouseOut={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
-          >
+        <div className="sidebar-links">
+          <button className="sidebar-link-btn" onClick={() => navigate("/guidance")}>
             📚 {t("sidebar.guide") || "User Guide"}
           </button>
-          <button
-            onClick={() => navigate("/showcase")}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              textAlign: "left",
-              padding: "8px 0",
-              cursor: "pointer",
-              fontSize: "0.9rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px"
-            }}
-            onMouseOver={(e) => e.currentTarget.style.color = "var(--accent)"}
-            onMouseOut={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
-          >
+          <button className="sidebar-link-btn" onClick={() => navigate("/showcase")}>
             ✨ {t("sidebar.showcase") || "Agent Showcase"}
           </button>
         </div>
@@ -103,6 +75,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="sidebar-footer">
           <span className="user-name">{user?.display_name || user?.username}</span>
           <div className="sidebar-actions">
+            <button className="theme-toggle" onClick={toggleTheme} title={theme === "light" ? "Switch to dark" : "Switch to light"}>
+              {theme === "light" ? "🌙" : "☀"}
+            </button>
             <button className="lang-toggle" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
               {lang === "zh" ? "EN" : "中"}
             </button>

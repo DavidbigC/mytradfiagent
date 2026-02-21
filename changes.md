@@ -982,3 +982,39 @@
 **Details:**
 - Confident matches (edit distance ≤ 1) are appended as e.g. `风语筑(300873.SZ)` so agent gets exact stock code
 - Higher-distance matches are returned from API but not auto-appended (user can still edit textarea)
+
+## 2026-02-21 — Unified theme + comfort redesign
+
+**What:** Aligned the landing page and main app to share the same visual identity. Refined the main app with a "comfort touch" — warmer message bubbles, better typography, sidebar brand header, and softer styling throughout.
+
+**Files:**
+- `frontend/src/styles/index.css` — full redesign: Google Fonts import, DM Sans UI font, softer message bubble shadows, refined spacing, sidebar brand, accent-gold status dots, warmer empty state
+- `frontend/src/styles/landing.css` — warmed all dark backgrounds from cold #09080a → #0c0907 family (warm dark brown), features section and footer updated to match
+- `frontend/src/components/Sidebar.tsx` — added `.sidebar-brand` block with "金融研究智能体" in Noto Serif SC gold (matching landing nav logo); converted sidebar-links from inline styles to CSS class
+
+**Details:**
+- Both pages now share Playfair Display + Noto Serif SC + DM Sans font trio (same @import in both CSS files)
+- Sidebar brand "金融研究智能体" in Noto Serif SC creates direct visual continuity with landing page logo
+- Assistant messages: removed harsh border, replaced with subtle box-shadow for paper-like warmth
+- User messages: more padding, softer rounded corners (14px)
+- Input textarea: Georgia/Noto Serif SC for writing feel; focus ring instead of just border
+- Status dots now use --accent-gold (#c9a227) matching landing page accent
+- Debate modal: warmer backdrop, softer border-radius
+- Added `--accent-gold` and `--shadow-soft` CSS variables for consistency
+
+## 2026-02-21 — Dark/light theme toggle
+
+**What:** Added a persistent dark/light theme toggle to the main app and landing page.
+
+**Files:**
+- `frontend/src/i18n.tsx` — added `ThemeProvider` + `useTheme` hook; applies `data-theme` attribute to `<html>` and persists to localStorage
+- `frontend/src/main.tsx` — wrapped app in `ThemeProvider`
+- `frontend/src/styles/index.css` — added `:root[data-theme="dark"]` CSS variable overrides + specific dark mode rules for hardcoded `#fff` inputs
+- `frontend/src/components/Sidebar.tsx` — added 🌙/☀ toggle button in the sidebar footer
+- `frontend/src/pages/LandingPage.tsx` — added 🌙/☀ toggle button in the landing nav (sets preference before login)
+
+**Details:**
+- Dark theme reuses the same warm dark palette as the landing page (#0c0907 background, #c9a227 gold accent)
+- Preference persists in localStorage as "theme"
+- `data-theme="dark"` on `<html>` allows CSS variable overrides without JS class manipulation
+- Hardcoded `#fff` input backgrounds are overridden for dark mode via `[data-theme="dark"]` selectors
