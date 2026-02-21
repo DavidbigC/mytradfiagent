@@ -219,8 +219,8 @@ async def _run_agent_inner(
     prev_tool_names: list[str] = []
 
     # ── Planning turn ─────────────────────────────────────────────────
-    # One tool-free LLM call to resolve intent, map to tools, and surface
-    # data limitations before any execution begins.
+    # One tool-free LLM call that first classifies intent (chitchat vs finance),
+    # then either answers directly (chitchat) or produces a research plan (finance).
     await _emit("Planning...")
     planning_messages = messages + [{"role": "user", "content": get_planning_prompt()}]
     try:
@@ -231,8 +231,24 @@ async def _run_agent_inner(
         )
         plan_raw = plan_resp.choices[0].message.content or ""
         for m in re.finditer(r"<think>(.*?)</think>", plan_raw, flags=re.DOTALL):
-            await _emit_thinking("agent_plan", "Research Plan", m.group(1).strip())
+            await _emit_thinking("agent_plan", "Planning", m.group(1).strip())
         plan = re.sub(r"<think>.*?</think>\s*", "", plan_raw, flags=re.DOTALL).strip()
+
+        # Parse intent from first line
+        first_line = plan.split("\n", 1)[0].strip().upper()
+        rest = plan.split("\n", 1)[1].strip() if "\n" in plan else ""
+
+        if "INTENT: CHITCHAT" in first_line:
+            # Direct answer — no tools, no agentic loop
+            answer = rest or plan
+            logger.info(f"Chitchat detected, returning direct answer ({len(answer)} chars)")
+            await save_message(conv_id, "assistant", answer)
+            return {"text": answer, "files": []}
+
+        # Finance intent (or no intent line) — strip the intent line and plan as usual
+        if "INTENT: FINANCE" in first_line:
+            plan = rest
+
         if plan:
             await _emit_thinking("agent_plan", "Research Plan", plan)
             messages.append({"role": "assistant", "content": plan})

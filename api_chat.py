@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 from uuid import UUID
@@ -248,6 +249,17 @@ async def speech_to_text(
 
     text = response.strip() if isinstance(response, str) else str(response).strip()
     logger.info(f"STT user={user['user_id']}: '{text}'")
+
+    # Skip stock extraction for non-finance audio — return raw transcription immediately
+    _FINANCE_RE = re.compile(
+        r"股票|股|基金|债券|A股|港股|美股|牛市|熊市|涨停|跌停|板块|行情|"
+        r"ETF|PE|PB|ROE|净利润|营收|分红|增发|回购|北向|外资|机构|主力|"
+        r"买入|卖出|持仓|仓位|止损|止盈|支撑|压力|均线|MACD|KDJ|"
+        r"\d{6}\.(?:SH|SZ|BJ)|[沪深]市"
+    )
+    if not _FINANCE_RE.search(text):
+        logger.info("STT: no finance keywords detected, returning raw transcription")
+        return JSONResponse({"text": text, "matched_stocks": [], "replacements": {}})
 
     pool = await get_pool()
     stock_result = await extract_and_find_stocks(text, client, pool)

@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-02-21 — Chitchat routing at planning stage
+
+**What:** Agent now classifies intent at the planning turn and short-circuits for non-financial queries, returning a direct friendly answer without entering the agentic tool loop.
+
+**Files:**
+- `config.py` — updated `get_planning_prompt()` to prepend INTENT classification instructions
+- `agent.py` — updated `_run_agent_inner()` to parse `INTENT: chitchat` / `INTENT: finance` from the planning response and return early for chitchat
+
 ## 2026-02-21 — Speech-to-text (Whisper) + stocknames table
 
 **What:** Added OpenAI Whisper speech-to-text integration (test server) and a `stocknames` table populated daily from SSE, SZSE, and BSE official exchange APIs.
