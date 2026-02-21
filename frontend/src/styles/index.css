@@ -1037,6 +1037,30 @@ html, body, #root {
   background: #a93226;
 }
 
+.input-area .mic-btn {
+  background: var(--bg-secondary, #f0f0f0);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  font-size: 1rem;
+}
+
+.input-area .mic-btn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.input-area .mic-btn.recording {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+  animation: mic-pulse 1s infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .menu-btn {

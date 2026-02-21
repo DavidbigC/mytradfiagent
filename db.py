@@ -78,10 +78,13 @@ CREATE TABLE IF NOT EXISTS stocknames (
     sector       VARCHAR(20),
     industry     VARCHAR(100),
     list_date    DATE,
+    pinyin       VARCHAR(100),
     updated_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
     PRIMARY KEY (stock_code, exchange)
 );
 CREATE INDEX IF NOT EXISTS idx_stocknames_name ON stocknames (stock_name);
+ALTER TABLE IF EXISTS stocknames ADD COLUMN IF NOT EXISTS pinyin VARCHAR(100);
+CREATE INDEX IF NOT EXISTS idx_stocknames_pinyin ON stocknames (pinyin);
 
 -- Report distillation cache (added 2026-02-20)
 CREATE TABLE IF NOT EXISTS report_cache (

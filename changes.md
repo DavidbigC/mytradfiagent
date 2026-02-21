@@ -952,3 +952,33 @@
 - Cache stored at `output/reports/{stock_code}/{year}_{code}_{type}.md`; DB entry in `report_cache` table
 - All cache operations are best-effort (silently fail, never crash the fetch)
 - 第十节财务报告 (previously truncated at 80k chars) now reaches Grok intact
+
+## 2026-02-21 — Voice input (STT) on main chat page
+
+**What:** Added a mic button to the chat input area that records audio, sends it to Whisper, and fills the textarea with the transcription.
+
+**Files:**
+- `api_chat.py` — added `POST /api/chat/stt` endpoint (authenticated, calls Whisper whisper-1, zh language)
+- `frontend/src/components/ChatView.tsx` — added `voiceState`, `handleVoiceToggle`, and mic button in `input-area`
+- `frontend/src/styles/index.css` — added `.mic-btn` and `.mic-btn.recording` styles with pulse animation
+- `frontend/dist/` — rebuilt
+
+**Details:**
+- Mic button sits between textarea and send button; shows 🎤 / ⏹ / … states
+- Recording stops on second click; transcription fills textarea for user review before sending
+- Button disabled during transcription or while agent is running
+
+## 2026-02-21 — STT stock resolution pipeline shared + wired into production
+
+**What:** Extracted GPT extraction + fuzzy pinyin matching into a shared module; wired it into the production STT endpoint so the main app resolves stock names on voice input.
+
+**Files:**
+- `tools/stt_stocks.py` — created; shared module with `to_pinyin`, `levenshtein`, `extract_and_find_stocks`
+- `api_chat.py` — STT endpoint now calls full pipeline, returns `matched_stocks` alongside `text`
+- `tests/test_whisper_web.py` — refactored to import from `tools/stt_stocks` instead of duplicating logic
+- `frontend/src/components/ChatView.tsx` — voice handler appends confident matches (distance ≤ 1) to textarea text
+- `frontend/dist/` — rebuilt
+
+**Details:**
+- Confident matches (edit distance ≤ 1) are appended as e.g. `风语筑(300873.SZ)` so agent gets exact stock code
+- Higher-distance matches are returned from API but not auto-appended (user can still edit textarea)

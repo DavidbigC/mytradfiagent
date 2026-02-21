@@ -17,3 +17,4 @@ bcrypt
 python-multipart
 fpdf2
 playwright
+pypinyin

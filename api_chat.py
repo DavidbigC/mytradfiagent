@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse, FileResponse
+import io
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from db import get_pool
@@ -209,6 +210,54 @@ async def stop_agent_run(user: dict = Depends(get_current_user)):
     run.put({"event": "error", "data": json.dumps({"error": "Stopped by user"})})
     logger.info(f"Agent run cancelled for user {user_id}")
     return {"ok": True, "stopped": True}
+
+
+@router.post("/stt")
+async def speech_to_text(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Transcribe audio with Whisper, then extract + fuzzy-match stock names.
+
+    Returns {text, matched_stocks: [{stock_code, stock_name, exchange, distance}]}.
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
+
+    audio_bytes = await file.read()
+    if len(audio_bytes) < 1000:
+        raise HTTPException(status_code=400, detail="Audio too short or empty")
+
+    from openai import OpenAI
+    from tools.stt_stocks import extract_and_find_stocks
+
+    client = OpenAI(api_key=api_key)
+    filename = file.filename or "audio.webm"
+    try:
+        response = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(filename, io.BytesIO(audio_bytes), file.content_type or "audio/webm"),
+            language="zh",
+            response_format="text",
+            temperature=0,
+            prompt="用户正在使用中国A股金融研究助手进行语音输入。",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    text = response.strip() if isinstance(response, str) else str(response).strip()
+    logger.info(f"STT user={user['user_id']}: '{text}'")
+
+    pool = await get_pool()
+    stock_result = await extract_and_find_stocks(text, client, pool)
+    logger.info(f"STT stocks: extracted={stock_result['extracted_names']} matched={[(s['stock_name'], s['distance']) for s in stock_result['matched_stocks']]}")
+
+    return JSONResponse({
+        "text": text,
+        "matched_stocks": stock_result["matched_stocks"],
+        "replacements": stock_result["replacements"],
+    })
 
 
 @router.get("/stream")

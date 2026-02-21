@@ -20,18 +20,20 @@ from io import BytesIO
 
 import requests
 import pandas as pd
+from pypinyin import lazy_pinyin
 
 log = logging.getLogger(__name__)
 
 UPSERT_SQL = """
-INSERT INTO stocknames (stock_code, exchange, stock_name, full_name, sector, industry, list_date)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO stocknames (stock_code, exchange, stock_name, full_name, sector, industry, list_date, pinyin)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (stock_code, exchange) DO UPDATE SET
     stock_name = EXCLUDED.stock_name,
     full_name  = EXCLUDED.full_name,
     sector     = EXCLUDED.sector,
     industry   = EXCLUDED.industry,
     list_date  = EXCLUDED.list_date,
+    pinyin     = EXCLUDED.pinyin,
     updated_at = now()
 """
 
@@ -51,6 +53,11 @@ def _clean_industry(raw) -> str | None:
     if not raw:
         return None
     return re.sub(r"^[A-Z]\s+", "", str(raw).strip()) or None
+
+
+def _to_pinyin(text: str) -> str:
+    """Convert Chinese text to pinyin string with no spaces, e.g. 继峰股份 → jifenggufen"""
+    return "".join(lazy_pinyin(text.strip()))
 
 
 # ─────────────────────────────────────────
@@ -82,14 +89,16 @@ def _fetch_sse() -> list[tuple]:
         r.raise_for_status()
         data = r.json().get("result", [])
         for rec in data:
+            name = rec.get("SEC_NAME_CN", "").strip()
             rows.append((
                 rec.get("A_STOCK_CODE", "").strip(),
                 "SH",
-                rec.get("SEC_NAME_CN", "").strip(),
+                name,
                 rec.get("FULL_NAME", "").strip() or None,
                 sector,
                 _clean_industry(rec.get("CSRC_CODE_DESC")),
                 _parse_date(rec.get("LIST_DATE")),
+                _to_pinyin(name),
             ))
         log.info(f"SSE {sector}: {len(data)} stocks fetched")
     return rows
@@ -108,14 +117,16 @@ def _fetch_szse() -> list[tuple]:
         code = str(rec.get("A股代码", "")).split(".")[0].strip().zfill(6)
         if not code or code == "000nan":
             continue
+        name = str(rec.get("A股简称", "")).strip()
         rows.append((
             code,
             "SZ",
-            str(rec.get("A股简称", "")).strip(),
+            name,
             str(rec.get("公司全称", "")).strip() or None,
             str(rec.get("板块", "")).strip() or None,
             _clean_industry(rec.get("所属行业")),
             _parse_date(rec.get("A股上市日期")),
+            _to_pinyin(name),
         ))
     log.info(f"SZSE: {len(rows)} stocks fetched")
     return rows
@@ -165,14 +176,16 @@ def _fetch_bse(delay: float = 0) -> list[tuple]:
         code = str(rec.get("xxzqdm", "")).strip().zfill(6)
         if not code:
             continue
+        name = str(rec.get("xxzqjc", "")).strip()
         rows.append((
             code,
             "BJ",
-            str(rec.get("xxzqjc", "")).strip(),
+            name,
             None,
             "北交所",
             str(rec.get("xxhyzl", "")).strip() or None,
             _parse_date(rec.get("fxssrq")),
+            _to_pinyin(name),
         ))
     log.info(f"BSE: {len(rows)} stocks fetched")
     return rows

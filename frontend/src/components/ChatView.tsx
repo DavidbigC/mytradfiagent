@@ -64,6 +64,9 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
 
   // Auto-resize textarea to fit content
   const autoResize = useCallback(() => {
@@ -304,6 +307,59 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
     }
   }
 
+  async function handleVoiceToggle() {
+    if (voiceState === "transcribing") return;
+
+    if (voiceState === "recording") {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceChunksRef.current = [];
+      const mr = new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+
+      mr.ondataavailable = (e) => voiceChunksRef.current.push(e.data);
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setVoiceState("transcribing");
+        try {
+          const fd = new FormData();
+          fd.append("file", new Blob(voiceChunksRef.current), "audio.webm");
+          const res = await fetch("/api/chat/stt", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: fd,
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          // Replace each garbled extracted name with the resolved stock name + code
+          let result: string = data.text;
+          const replacements: Record<string, any> = data.replacements ?? {};
+          for (const [extracted, match] of Object.entries(replacements)) {
+            if (match && (match as any).distance <= 1) {
+              const resolved = `${(match as any).stock_name}(${(match as any).stock_code}.${(match as any).exchange})`;
+              result = result.split(extracted).join(resolved);
+            }
+          }
+          setInput(result);
+          setTimeout(() => autoResize(), 0);
+        } catch (_err) {
+          // silently ignore — user can try again
+        } finally {
+          setVoiceState("idle");
+        }
+      };
+
+      mr.start();
+      setVoiceState("recording");
+    } catch (_err) {
+      setVoiceState("idle");
+    }
+  }
+
   return (
     <div className="chat-view">
       <div className="messages-container">
@@ -343,6 +399,14 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
           placeholder={t("chat.placeholder")}
           rows={1}
         />
+        <button
+          className={`mic-btn${voiceState === "recording" ? " recording" : ""}`}
+          onClick={handleVoiceToggle}
+          disabled={voiceState === "transcribing" || sending}
+          title={voiceState === "recording" ? "Stop recording" : "Voice input"}
+        >
+          {voiceState === "transcribing" ? "…" : voiceState === "recording" ? "⏹" : "🎤"}
+        </button>
         {sending ? (
           <button className="stop-btn" onClick={handleStop}>
             {t("chat.stop")}
