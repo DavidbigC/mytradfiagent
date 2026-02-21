@@ -608,7 +608,7 @@ async def _minimax_summarize_report(
     minimax_input = _prepare_report_text(full_text, focus_keywords, max_chars=1_500_000)
 
     chunk_size = 30_000
-    overlap = 2_500
+    overlap = 800
     chunks = []
     start = 0
     while start < len(minimax_input):

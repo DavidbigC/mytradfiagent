@@ -1,16 +1,19 @@
+import asyncio
 import os
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, time as dtime, timedelta
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import WEB_PORT
-from db import init_db
+from db import init_db, get_pool
 from api_auth import router as auth_router
 from api_chat import router as chat_router
 from api_admin import router as admin_router
+from tools.populate_stocknames import populate_stocknames
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -18,11 +21,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+STOCKNAMES_REFRESH_TIME = dtime(19, 0)  # 19:00 local time, after market close
+
+
+async def _stocknames_scheduler():
+    """On startup: populate if empty. Then refresh daily at 19:00."""
+    pool = await get_pool()
+
+    count = await pool.fetchval("SELECT COUNT(*) FROM stocknames")
+    if count == 0:
+        logger.info("stocknames table is empty — running initial populate...")
+        try:
+            await populate_stocknames(pool)
+        except Exception as e:
+            logger.error(f"Initial stocknames populate failed: {e}")
+
+    while True:
+        now = datetime.now()
+        next_run = datetime.combine(now.date(), STOCKNAMES_REFRESH_TIME)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        sleep_secs = (next_run - now).total_seconds()
+        logger.info(f"stocknames next refresh in {sleep_secs/3600:.1f}h (at {next_run.strftime('%H:%M')})")
+        await asyncio.sleep(sleep_secs)
+
+        logger.info("Running daily stocknames refresh...")
+        try:
+            await populate_stocknames(pool)
+        except Exception as e:
+            logger.error(f"Daily stocknames refresh failed: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized for web server")
+    asyncio.create_task(_stocknames_scheduler())
     yield
 
 

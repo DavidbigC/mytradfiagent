@@ -1,5 +1,25 @@
 # Changes
 
+## 2026-02-21 — Speech-to-text (Whisper) + stocknames table
+
+**What:** Added OpenAI Whisper speech-to-text integration (test server) and a `stocknames` table populated daily from SSE, SZSE, and BSE official exchange APIs.
+
+**Files:**
+- `tests/test_whisper_web.py` — created: standalone FastAPI test server for Whisper STT
+- `tests/test_whisper.py` — created: CLI connectivity test for Whisper API
+- `tests/test_exchange_apis.py` — created: inspection script for SSE/SZSE/BSE APIs
+- `tools/populate_stocknames.py` — created: fetches ~5500 A-share stocks from all 3 exchanges, upserts into DB
+- `db.py` — modified: added `stocknames` table to SCHEMA_SQL
+- `web.py` — modified: added `_stocknames_scheduler()` background task (populates on startup if empty, refreshes daily at 19:00)
+
+**Details:**
+- SSE fetches 主板A股 + 科创板 via JSON API (requires Referer header)
+- SZSE fetches via XLSX download
+- BSE fetches from bseinfo.net paginated POST API
+- All three fetches run in parallel via `asyncio.gather` + `asyncio.to_thread`
+- Upsert is idempotent — safe to re-run or re-populate
+- `stocknames` columns: stock_code, exchange (SH/SZ/BJ), stock_name, full_name, sector, industry, list_date
+
 ## 2026-02-20 — Fix MiniMax error 2013 (incomplete tool-call sequences)
 
 **What:** Replaced the front-only trim in `load_recent_messages()` with a full-array scan that drops incomplete or orphaned tool-call sequences anywhere in message history.

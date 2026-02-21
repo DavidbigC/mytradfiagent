@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS idx_files_conversation ON files(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
 CREATE INDEX IF NOT EXISTS idx_files_filepath ON files(filepath);
+-- A-share stock name/code registry for STT prompt injection (added 2026-02-21)
+CREATE TABLE IF NOT EXISTS stocknames (
+    stock_code   VARCHAR(6)    NOT NULL,
+    exchange     VARCHAR(2)    NOT NULL,
+    stock_name   VARCHAR(50)   NOT NULL,
+    full_name    VARCHAR(300),
+    sector       VARCHAR(20),
+    industry     VARCHAR(100),
+    list_date    DATE,
+    updated_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    PRIMARY KEY (stock_code, exchange)
+);
+CREATE INDEX IF NOT EXISTS idx_stocknames_name ON stocknames (stock_name);
+
 -- Report distillation cache (added 2026-02-20)
 CREATE TABLE IF NOT EXISTS report_cache (
     id          SERIAL PRIMARY KEY,
