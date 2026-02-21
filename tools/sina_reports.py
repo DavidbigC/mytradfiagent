@@ -36,7 +36,7 @@ FETCH_COMPANY_REPORT_SCHEMA = {
         "name": "fetch_company_report",
         "description": (
             "Fetch and summarize a financial report for a Chinese A-share company (Sina Finance). "
-            "Uses Grok to read the full report and return a structured Markdown summary with key metrics, "
+            "Reads the full report and returns a structured Markdown summary with key metrics, "
             "balance sheet, cash flow, segment breakdown, and notable findings. "
             "PRIORITY: Always call with the most recent quarterly report first (q3 > mid > q1). "
             "If yearly context is also needed, call this tool TWICE in parallel — once for the quarterly "
@@ -545,8 +545,8 @@ async def fetch_sina_profit_statement(stock_code: str, year: int | None = None) 
     }
 
 
-def _prepare_for_grok(full_text: str, focus_keywords: list[str] | None = None, max_chars: int = 80_000) -> str:
-    """Reduce token cost before sending to Grok without losing financial data.
+def _prepare_report_text(full_text: str, focus_keywords: list[str] | None = None, max_chars: int = 80_000) -> str:
+    """Reduce input size before sending to LLM without losing financial data.
 
     Steps:
     1. Parse TOC and drop skip-chapters (重要提示, 公司治理, 环境社会责任, etc.)
@@ -605,11 +605,20 @@ async def _minimax_summarize_report(
         logger.warning("Minimax client not initialised (MINIMAX_API_KEY missing?) — falling back to keyword extraction")
         return None
 
-    # Minimax supports massive context window.
-    minimax_input = _prepare_for_grok(full_text, focus_keywords, max_chars=1_500_000)
+    minimax_input = _prepare_report_text(full_text, focus_keywords, max_chars=1_500_000)
+
+    chunk_size = 30_000
+    overlap = 2_500
+    chunks = []
+    start = 0
+    while start < len(minimax_input):
+        end = min(start + chunk_size + overlap, len(minimax_input))
+        chunks.append(minimax_input[start:end])
+        start += chunk_size
+
     logger.info(
-        f"Minimax input: {len(full_text):,} → {len(minimax_input):,} chars "
-        f"({100 - len(minimax_input) * 100 // max(len(full_text), 1)}% reduction)"
+        f"Minimax input: {len(full_text):,} → {len(minimax_input):,} chars. "
+        f"Split into {len(chunks)} chunks of ~{chunk_size} chars."
     )
 
     focus_note = ""
@@ -617,69 +626,96 @@ async def _minimax_summarize_report(
         focus_note = f"\n**重点关注指标**：{', '.join(focus_keywords)}"
 
     system = (
-        "你是一名专业的卖方金融分析师。请仔细阅读以下中文财务报告，输出结构化的Markdown分析报告。"
-        "要求：数字精确，注明报告期，关键财务表格必须以Markdown表格格式完整保留。"
-        "不要省略任何财务数据、比率或管理层提到的具体数字。"
+        "你是一名专业的卖方金融分析师。请仔细阅读以下中文财务报告的部分内容，提取关键财务数据和管理层讨论的重点。"
+        "要求：数字精确，注明报告期，重点财务表格必须以Markdown表格格式完整提取。"
+        "如果该部分内容没有相应的关键数据或业务讨论，请直接说明，切勿编造虚假数据。"
     )
 
-    prompt = (
-        f"**报告**：{title}（{report_type_cn}）{focus_note}\n\n"
-        "## 阅读策略\n"
-        "本报告文本已按中国上市公司年报/季报标准格式预处理，仅保留财务相关章节：\n"
-        "- **已保留**：主要财务指标、管理层讨论与分析、财务报告、业务综述、风险管理\n"
-        "- **已过滤**：重要提示、公司简介、公司治理、环境社会责任、重要事项等非财务章节\n\n"
-        "## 请按以下结构输出Markdown报告\n\n"
+    import asyncio
+    _sem = asyncio.Semaphore(4)  # max 4 concurrent chunk calls
+
+    async def process_chunk(idx: int, chunk: str) -> str:
+        prompt = (
+            f"**报告**：{title}（{report_type_cn}）{focus_note}\n\n"
+            f"注意：这是该报告长文本的第 {idx + 1} 部分（共 {len(chunks)} 部分）。\n\n"
+            "## 提取任务\n"
+            "请按以下结构输出核心内容：\n"
+            "### 一、本节核心财务与业务数据\n"
+            "（若包含相关表格，请完整保留。如提到了资产状况、财务指标、产品明细等，请全部提取出来）\n"
+            "### 二、管理层讨论重点摘要\n"
+            "（本段提及的经营总结、行业情况或未来计划）\n"
+            "### 三、风险与异常关注\n"
+            "（本段提及的具体风险隐患或值得关注的异常点）\n\n"
+            f"以下是第 {idx + 1} 部分的报告内容：\n\n{chunk}"
+        )
+        async with _sem:
+            try:
+                resp = await _minimax_client.chat.completions.create(
+                    model=MINIMAX_MODEL,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=4096,
+                )
+                content = resp.choices[0].message.content or ""
+                logger.info(f"Minimax chunk {idx + 1}/{len(chunks)} finished: {len(content)} chars")
+                return f"## 报告第 {idx + 1} 部分提取结果\n\n{content}"
+            except Exception as e:
+                logger.warning(f"Minimax chunk {idx + 1} failed: {e}")
+                return f"## 报告第 {idx + 1} 部分提取结果\n\n> 处理失败: {e}"
+
+    tasks = [process_chunk(i, c) for i, c in enumerate(chunks)]
+    results = await asyncio.gather(*tasks)
+
+    combined_text = "\n\n---\n\n".join(results)
+
+    # --- Final Cleanup Synthesis Pass ---
+    logger.info("Starting final cleanup synthesis pass...")
+    final_system = (
+        "你是一名资深的卖方金融分析师。你的任务是将一份长篇财务报告的多个片段提取结果，综合并重新编排成一份完整的、排版精美、高度可读的Markdown研报。"
+        "要求：严格基于下方各个片段的内容，严禁编造数据；直接输出报告正文。去除所有诸如'报告第 X 部分提取结果'、'根据提取的第X部分'等机械冗余语句。"
+    )
+    
+    final_prompt = (
+        f"**任务目标**：生成《{title}》的最终深度研报汇总。\n\n"
+        "以下内容是AI助理从原始长报告各个分段中并行提取出的子报告集合。请将它们合并、去重、润色，输出一份统一的结构化报告。\n\n"
+        "## 请以Markdown输出，结构如下：\n"
         "### 一、核心财务指标\n"
-        "用表格列出：营业收入、净利润（归母）、基本EPS、ROE、总资产、净资产，"
-        "以及各项与上期的同比变化（%）。\n\n"
+        "合并并汇总所有相关财务数据（以Markdown表格列出）。\n\n"
         "### 二、管理层讨论与分析摘要\n"
-        "- **总体经营情况**（含具体数字，2–3段）\n"
-        "- **分业务/分行业收入结构**：完整保留原始数据表格（Markdown表格格式）\n"
-        "- **管理层重点关注问题**：逐条列出管理层在报告中明确提及的重点问题\n\n"
-        "### 三、财务报表关键数据\n"
-        "完整保留以下数据表格（Markdown表格格式，不要简化）：\n"
-        "- 利润表主要项目（营收、毛利、期间费用、净利润）\n"
-        "- 资产负债表关键项目（总资产、总负债、净资产、主要负债结构）\n"
-        "- 现金流量表摘要（经营/投资/融资活动净现金流）\n"
-        "- 行业特定指标（如银行：不良贷款率、净息差、拨备覆盖率、资本充足率；"
-        "零售：同店销售、库存周转；房地产：去化率、土储等）\n\n"
+        "按逻辑连贯地提炼报告期内总体经营情况、业务板块结构及核心战略。\n\n"
+        "### 三、财务报表关键明细\n"
+        "整合片段中提取出的关键表格（如营收明细、产品线结构、行业特定指标等），将分散的表格或数据点合并为清晰的视图。如果数据重复，请自动合并整理。\n\n"
         "### 四、风险因素\n"
-        "列出管理层在报告中披露的主要风险（逐条，注明原文依据）。\n\n"
+        "汇总并去重管理层提示的关键风险及具体依据。\n\n"
         "### 五、亮点与异常发现\n"
-        "从报告中找出2–4个最值得深入研究的发现。可以是：超预期或低于预期的指标、"
-        "趋势转折点、管理层措辞变化、隐藏风险、与行业对比后的异常。"
-        "每条注明具体数据依据。\n\n"
-        f"以下是报告内容：\n\n{minimax_input}"
+        "总结全篇最核心的焦点、趋势或超预期/低于预期的指标。\n\n"
+        f"---片段提取结果集合---\n\n{combined_text}"
     )
 
     try:
-        resp = await _minimax_client.chat.completions.create(
+        final_resp = await _minimax_client.chat.completions.create(
             model=MINIMAX_MODEL,
             messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": final_system},
+                {"role": "user", "content": final_prompt},
             ],
-            max_tokens=4096,
+            max_tokens=64000,
         )
-        choice = resp.choices[0]
-        finish_reason = choice.finish_reason
-        content = choice.message.content or ""
-        logger.info(
-            f"Minimax response: {len(content):,} chars, finish_reason={finish_reason}"
-        )
-        if finish_reason == "length":
-            logger.warning("Minimax output hit max_tokens — summary may be incomplete")
-        return content or None
+        final_content = final_resp.choices[0].message.content or ""
+        logger.info(f"Final cleanup finished: {len(final_content)} chars")
+        return final_content
     except Exception as e:
-        logger.warning(f"Minimax report summarization failed: {e}")
-        return None
+        logger.warning(f"Final cleanup failed, falling back to raw combined text: {e}")
+        return combined_text
 
 
 async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
     """Fetch the latest financial report for a Chinese A-share company.
 
     Fast path: check report_cache DB → if hit, read local .md file and return.
-    Slow path: fetch from Sina Finance, distil with Grok, save to disk + DB, return.
+    Slow path: fetch from Sina Finance, distil with Minimax, save to disk + DB, return.
     """
     code = stock_code.strip()
     if len(code) != 6 or not code.isdigit():
