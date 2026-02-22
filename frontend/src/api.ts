@@ -39,7 +39,8 @@ export async function apiLogin(username: string, password: string) {
 export async function apiCreateAccount(token: string, username: string, password: string, displayName?: string) {
   const res = await fetch(`${BASE}/api/auth/create-account`, {
     method: "POST",
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
     body: JSON.stringify({ username, password, display_name: displayName }),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
@@ -67,7 +68,8 @@ export async function fetchTableInfo(token: string, table: string) {
 
 export async function fetchTableRows(token: string, table: string, limit = 50, offset = 0) {
   const res = await fetch(`${BASE}/api/admin/tables/${table}/rows?limit=${limit}&offset=${offset}`, {
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to fetch rows");
@@ -77,7 +79,8 @@ export async function fetchTableRows(token: string, table: string, limit = 50, o
 export async function runQuery(token: string, sql: string) {
   const res = await fetch(`${BASE}/api/admin/query`, {
     method: "POST",
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
     body: JSON.stringify({ sql }),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
@@ -97,10 +100,11 @@ export async function fetchConversations(token: string) {
   return res.json();
 }
 
-export async function createConversation(token: string) {
+export async function createConversation(token: string, mode: string = "normal") {
   const res = await fetch(`${BASE}/api/chat/conversations`, {
     method: "POST",
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to create conversation");
@@ -109,7 +113,8 @@ export async function createConversation(token: string) {
 
 export async function fetchMessages(token: string, convId: string, limit = 50): Promise<{ messages: any[]; files: any[] }> {
   const res = await fetch(`${BASE}/api/chat/conversations/${convId}/messages?limit=${limit}`, {
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to load messages");
@@ -122,7 +127,8 @@ export async function fetchMessages(token: string, convId: string, limit = 50): 
 export async function deleteConversation(token: string, convId: string) {
   const res = await fetch(`${BASE}/api/chat/conversations/${convId}`, {
     method: "DELETE",
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
   });
   if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to delete conversation");
@@ -208,7 +214,8 @@ export function sendMessage(
 
   fetch(`${BASE}/api/chat/send`, {
     method: "POST",
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
     body: JSON.stringify({ message, conversation_id: conversationId, mode: mode || null }),
     signal: controller.signal,
   })
@@ -241,7 +248,8 @@ export function subscribeStream(token: string, callbacks: SSECallbacks): AbortCo
   const controller = new AbortController();
 
   fetch(`${BASE}/api/chat/stream`, {
-    headers: headers(token),
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
     signal: controller.signal,
   })
     .then(async (res) => {
