@@ -1,5 +1,26 @@
 # Changes
 
+## 2026-02-22 — Add fetch_ohlcv tool for 5-min OHLCV / technical analysis
+
+**What:** Created a new tool that queries the local `ohlcv_5m` table in the marketdata DB, returning candlestick bars with pre-computed MA5/MA20/MA60 and chart-ready series for use with `generate_chart`.
+
+**Files:**
+- `tools/ohlcv.py` — created; `fetch_ohlcv` + `FETCH_OHLCV_SCHEMA`
+- `tools/__init__.py` — registered tool
+- `config.py` — added `fetch_ohlcv` to planning prompt tool table and TA guidance
+
+---
+
+## 2026-02-22 — Restrict debate to button-only; clean up field-name translation
+
+**What:** Removed `analyze_trade_opportunity` from the agent's tool list so it can only be triggered by the hypothesis debate button. Also moved the financials column glossary out of config.py and into `data/financials_columns.md`.
+
+**Files:**
+- `tools/__init__.py` — removed `ANALYZE_TRADE_SCHEMA` from `TOOL_SCHEMAS` (stays in `TOOL_MAP` for debate path)
+- `config.py` — replaced hardcoded field-name table with `_load_file("financials_columns.md")` helper
+
+---
+
 ## 2026-02-22 — Fix token-by-token streaming in frontend
 
 **What:** The backend was already emitting `token` SSE events per token, but the frontend SSE reader had no handler for them so they were silently dropped. Wired up proper streaming so text appears incrementally.
