@@ -1,5 +1,19 @@
 # Changes
 
+## 2026-02-22 — Targeted DB-anchored report analysis (replaces exhaustive summarization)
+
+**What:** Replaced the full-report exhaustive distillation approach with a three-step targeted Q&A flow: pull historical DB financials → generate research questions from trends → answer them from a focused 40k-char chunk of the report.
+
+**Files:**
+- `tools/sina_reports.py` — removed `_make_chunks`, `_CHUNK_SIZE`, `_CHUNK_OVERLAP`, `_MAX_PARALLEL`; added `_get_financial_context`, `_generate_research_questions`, `_groq_targeted_analysis`; updated `fetch_company_report` slow path to call the three-step flow; updated `FETCH_COMPANY_REPORT_SCHEMA` description
+
+**Details:**
+- `_get_financial_context(code)` queries the `financials` DB table for last 8 quarters (ROE, margins, YoY growth, solvency, cash flow, EPS)
+- `_generate_research_questions(...)` sends financial trend data to Groq to generate 4–6 targeted research questions (e.g. why ROE dropped, what drove the margin compression)
+- `_groq_targeted_analysis(...)` prepares a 40k-char focused chunk via `_prepare_report_text`, then answers the questions in a single Groq call with an investment conclusion (看多/看空/中性)
+- MD output now includes a "历史财务背景" section with the DB data table, followed by "研究问题与分析" with Groq's answers
+- `summarized_by` field is now `"groq_targeted"` on success
+
 ## 2026-02-22 — Switch report summarizer from Minimax to Groq (PDF-based chunked extraction)
 
 **What:** Replaced Minimax LLM summarization in `sina_reports.py` with Groq `openai/gpt-oss-20b` using full-PDF extraction and parallel chunked processing for higher accuracy and zero hallucination.

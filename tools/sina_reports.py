@@ -22,9 +22,6 @@ _groq_client: AsyncOpenAI | None = (
     AsyncOpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL) if GROQ_API_KEY else None
 )
 
-_CHUNK_SIZE    = 10_000
-_CHUNK_OVERLAP = 200
-_MAX_PARALLEL  = 4
 
 SINA_BASE = "https://vip.stock.finance.sina.com.cn"
 
@@ -41,9 +38,11 @@ FETCH_COMPANY_REPORT_SCHEMA = {
     "function": {
         "name": "fetch_company_report",
         "description": (
-            "Fetch and summarize a financial report for a Chinese A-share company (Sina Finance). "
-            "Reads the full report and returns a structured Markdown summary with key metrics, "
-            "balance sheet, cash flow, segment breakdown, and notable findings. "
+            "Fetch and analyse a financial report for a Chinese A-share company (Sina Finance). "
+            "Uses the stock's historical DB financials to generate targeted research questions, "
+            "then answers those questions from a focused chunk of the actual report. "
+            "Returns a structured Markdown analysis with question-by-question findings and an "
+            "investment conclusion (看多/看空/中性). "
             "PRIORITY: Always call with the most recent quarterly report first (q3 > mid > q1). "
             "If yearly context is also needed, call this tool TWICE in parallel — once for the quarterly "
             "and once for yearly. Never call with yearly alone. "
@@ -596,16 +595,6 @@ def _prepare_report_text(full_text: str, focus_keywords: list[str] | None = None
         filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
     return filtered
 
-def _make_chunks(text: str) -> list[str]:
-    """Split text into overlapping chunks for parallel LLM processing."""
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = min(start + _CHUNK_SIZE, len(text))
-        chunks.append(text[start:end + _CHUNK_OVERLAP])
-        start += _CHUNK_SIZE
-    return chunks
-
 
 async def _download_pdf(url: str) -> bytes:
     """Download PDF bytes from Sina Finance file server."""
@@ -620,136 +609,207 @@ async def _download_pdf(url: str) -> bytes:
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
-    """Extract plain text from PDF bytes using pymupdf. No file written to disk."""
+    """Extract text from PDF bytes using pymupdf, preserving table structure.
+
+    Uses find_tables() to extract tables as labelled Markdown rows, then extracts
+    non-table text blocks separately to avoid duplication and unlabelled numbers.
+    Returns empty string if the PDF appears to be image-based (< 300 chars/page avg).
+    """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages = [page.get_text("text") for page in doc if page.get_text("text").strip()]
+    page_texts: list[str] = []
+
+    for page in doc:
+        parts: list[str] = []
+        table_rects: list[fitz.Rect] = []
+
+        # Extract tables with proper row/column structure
+        try:
+            tabs = page.find_tables()
+            for tab in tabs.tables:
+                table_rects.append(fitz.Rect(tab.bbox))
+                rows = tab.extract()
+                if rows:
+                    md_lines = [
+                        " | ".join(str(c or "").strip() for c in row)
+                        for row in rows
+                        if any(str(c or "").strip() for c in row)
+                    ]
+                    if md_lines:
+                        parts.append("\n".join(md_lines))
+        except Exception:
+            pass  # find_tables not available or failed — text-only fallback below
+
+        # Extract text blocks outside table areas to avoid duplication
+        for block in page.get_text("blocks"):
+            if block[6] != 0:  # skip image blocks
+                continue
+            block_rect = fitz.Rect(block[:4])
+            if any(not block_rect.intersect(tr).is_empty for tr in table_rects):
+                continue  # covered by a table already extracted above
+            text = block[4].strip()
+            if text:
+                parts.append(text)
+
+        if parts:
+            page_texts.append("\n".join(parts))
+
     doc.close()
-    text = "\n".join(pages)
-    logger.info(f"PDF text extracted: {len(text):,} chars from {len(pages)} pages")
-    return text
+    full_text = "\n\n".join(page_texts)
+    n_pages = len(doc)
+    avg_chars = len(full_text) / max(n_pages, 1)
+    logger.info(
+        f"PDF text extracted: {len(full_text):,} chars from {len(page_texts)} pages "
+        f"(avg {avg_chars:.0f} chars/page)"
+    )
+    return full_text
 
 
-_SYSTEM_EXTRACT = """你是一名专业的卖方金融分析师，任务是从财务报告片段中进行无损数据提取。
+async def _get_financial_context(code: str) -> str:
+    """Pull last 8 quarters of financial metrics from DB for a stock.
 
-核心原则：
-1. 穷举提取——本片段中出现的每一个数字、比率、金额、百分比、增减变化都必须提取，一个都不能遗漏。
-2. 数字必须100%来自原文，严禁编造、推算或四舍五入后不标注。
-3. 所有表格必须以完整Markdown表格格式保留，包括每一行每一列，绝对不得省略。
-4. 每个数据必须标明报告期（年度、季度、具体日期）。
-5. 管理层原话中的关键判断、前瞻性表述、行业分析也必须完整引用，不得压缩。
-6. 若本片段确实无财务数据，简短说明后停止，不要填充废话。
-7. 输出长度不设上限——有多少数据就输出多少，宁多勿缺。"""
+    Returns a compact text summary of the trend data for use in question generation.
+    """
+    try:
+        from db import get_pool
+        pool = await get_pool()
+        rows = await pool.fetch(
+            """
+            SELECT stat_date, pub_date,
+                   roe_avg, np_margin, gp_margin, net_profit, mb_revenue,
+                   yoy_ni, yoy_pni, yoy_asset,
+                   current_ratio, liability_to_asset, asset_to_equity,
+                   cfo_to_np, cfo_to_or,
+                   eps_ttm, dupont_roe, dupont_asset_turn, dupont_ebit_togr
+            FROM financials
+            WHERE code = $1
+            ORDER BY stat_date DESC
+            LIMIT 8
+            """,
+            code,
+        )
+        if not rows:
+            return "（数据库中暂无该股票财务数据）"
 
-_SYSTEM_SYNTHESIS = """你是一名资深卖方金融分析师，将多份片段提取报告整合为一份极度详尽的深度研报。
+        lines = ["季度财务数据（最近8期，最新在前）：\n"]
+        lines.append(
+            f"{'报告期':<12} {'ROE':>6} {'净利率':>7} {'毛利率':>7} "
+            f"{'净利润YoY':>9} {'收入YoY':>9} {'资产负债率':>9} "
+            f"{'经营现金/净利':>12} {'EPS_TTM':>8}"
+        )
+        lines.append("-" * 90)
+        for r in rows:
+            def fmt(v):
+                return f"{v*100:.1f}%" if v is not None else "N/A"
+            def fmtv(v):
+                return f"{v:.3f}" if v is not None else "N/A"
+            lines.append(
+                f"{str(r['stat_date']):<12} {fmt(r['roe_avg']):>6} {fmt(r['np_margin']):>7} "
+                f"{fmt(r['gp_margin']):>7} {fmt(r['yoy_ni']):>9} {fmt(r['yoy_asset']):>9} "
+                f"{fmt(r['liability_to_asset']):>9} {fmtv(r['cfo_to_np']):>12} "
+                f"{fmtv(r['eps_ttm']) if r['eps_ttm'] is not None else 'N/A':>8}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"Failed to fetch financial context from DB: {e}")
+        return "（财务数据查询失败）"
 
-核心原则：
-1. 保留所有数据——每一个出现在片段中的数字、表格、比率都必须出现在最终报告中，严禁丢失。
-2. 合并同类数据，消除重复，但保留所有不同报告期的对比数据。
-3. 严禁编造，严禁在片段数据之外添加任何数字。
-4. 输出不设长度限制，以数据完整性为第一优先级。
-5. 排版清晰：大量使用Markdown表格，数据密集段落用表格而非文字呈现。"""
 
-
-async def _groq_summarize_report(
-    full_text: str,
+async def _generate_research_questions(
+    financial_context: str,
     title: str,
-    report_type_cn: str,
     focus_keywords: list[str] | None = None,
-) -> str | None:
-    """Chunk report text and summarize in parallel with Groq.
+) -> list[str]:
+    """Use Groq to analyze financial trend data and produce targeted research questions.
 
-    Returns a structured Markdown string suitable for caching, or None on failure.
-    PDF bytes are never written to disk — text is extracted in memory only.
+    Returns a list of 4-6 specific questions to answer from the report.
     """
     if not _groq_client:
-        logger.warning("Groq client not initialised (GROQ_API_KEY missing?) — falling back to keyword extraction")
+        return []
+
+    keyword_note = f"\n用户额外关注：{', '.join(focus_keywords)}" if focus_keywords else ""
+
+    prompt = (
+        f"你是一名买方分析师，正在研究《{title}》。\n"
+        f"以下是该股票数据库中的历史季度财务数据：\n\n"
+        f"{financial_context}\n"
+        f"{keyword_note}\n\n"
+        "请基于以上数据中观察到的趋势、异常或需要核实的点，生成4到6个具体的研究问题。\n"
+        "这些问题将用于在原始财报中查找答案。\n"
+        "要求：\n"
+        "- 每个问题必须具体，可以在财报中找到答案（如管理层讨论、财务报表附注）\n"
+        "- 优先关注数据库显示的异常趋势（如毛利率下滑、现金质量恶化、杠杆上升）\n"
+        "- 如果数据库无数据，提出行业通用的关键问题\n"
+        "- 直接输出问题列表，每行一个问题，不要编号或前缀\n"
+    )
+
+    try:
+        resp = await _groq_client.chat.completions.create(
+            model=GROQ_REPORT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+            temperature=0.3,
+        )
+        raw = resp.choices[0].message.content or ""
+        questions = [q.strip() for q in raw.strip().splitlines() if q.strip()]
+        logger.info(f"Generated {len(questions)} research questions")
+        return questions
+    except Exception as e:
+        logger.warning(f"Research question generation failed: {e}")
+        return []
+
+
+async def _groq_targeted_analysis(
+    report_text: str,
+    title: str,
+    report_type_cn: str,
+    questions: list[str],
+    focus_keywords: list[str] | None = None,
+) -> str | None:
+    """Send a focused chunk of the report to Groq and answer specific research questions.
+
+    Much faster and more accurate than exhaustive summarization.
+    """
+    if not _groq_client:
         return None
 
-    prepared = _prepare_report_text(full_text, focus_keywords, max_chars=999_999)
-    chunks = _make_chunks(prepared)
-    focus_note = f"**重点关注指标**：{', '.join(focus_keywords)}\n\n" if focus_keywords else ""
+    # Cap at 40k chars — enough for the key sections, fits easily in 113k context
+    prepared = _prepare_report_text(report_text, focus_keywords, max_chars=40_000)
+    logger.info(f"Targeted analysis: {len(report_text):,} → {len(prepared):,} chars prepared")
 
-    logger.info(
-        f"Groq input: {len(full_text):,} → {len(prepared):,} chars, "
-        f"{len(chunks)} chunks of ~{_CHUNK_SIZE} chars"
+    questions_block = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+    keyword_note = f"\n**额外关注指标**：{', '.join(focus_keywords)}" if focus_keywords else ""
+
+    system = (
+        "你是一名专业的买方分析师。根据提供的财务报告原文，回答以下研究问题。\n"
+        "要求：\n"
+        "1. 只使用报告中实际存在的数据，严禁编造。\n"
+        "2. 每个问题单独回答，附上原文数据或引用。\n"
+        "3. 若报告中找不到某问题的答案，明确说明'报告中未披露'。\n"
+        "4. 在最后给出一个简短的综合投资结论（看多/看空/中性 + 核心理由）。"
     )
 
-    sem = asyncio.Semaphore(_MAX_PARALLEL)
-
-    async def _process_chunk(idx: int, chunk: str) -> str:
-        prompt = (
-            f"**报告**：{title}（{report_type_cn}）\n"
-            f"{focus_note}"
-            f"这是报告文本的第 {idx + 1}/{len(chunks)} 片段。请对本片段做穷举式数据提取，不遗漏任何数字。\n\n"
-            "## 提取结构\n\n"
-            "### 一、财务数据全量提取\n"
-            "列出本片段中出现的每一个财务数字，包括：收入、利润、资产、负债、比率、增减幅度、每股数据等。\n"
-            "遇到表格：完整复现为Markdown表格，一行一列都不能省。\n"
-            "遇到散列数字：逐条列出，格式：[指标名] [数值] [报告期]。\n\n"
-            "### 二、管理层表述全量提取\n"
-            "本片段中管理层对经营情况、战略、行业、风险的所有原话或核心表述，逐条引用，不压缩。\n\n"
-            "### 三、风险与异常全量提取\n"
-            "本片段中所有风险提示、异常数据、同比大幅变动的指标，逐条列出并附原文数据。\n\n"
-            f"--- 片段内容 ---\n\n{chunk}"
-        )
-        async with sem:
-            try:
-                resp = await _groq_client.chat.completions.create(
-                    model=GROQ_REPORT_MODEL,
-                    messages=[
-                        {"role": "system", "content": _SYSTEM_EXTRACT},
-                        {"role": "user",   "content": prompt},
-                    ],
-                    max_tokens=8192,
-                    temperature=0.1,
-                )
-                content = resp.choices[0].message.content or ""
-                logger.info(f"Groq chunk {idx + 1}/{len(chunks)} done: {len(content)} chars")
-                return f"## 片段 {idx + 1}\n\n{content}"
-            except Exception as e:
-                logger.warning(f"Groq chunk {idx + 1} failed: {e}")
-                return f"## 片段 {idx + 1}\n\n> 处理失败: {e}"
-
-    results = await asyncio.gather(*[_process_chunk(i, c) for i, c in enumerate(chunks)])
-    combined = "\n\n---\n\n".join(results)
-
-    # Synthesis pass
-    logger.info("Starting synthesis pass...")
-    final_prompt = (
-        f"**任务**：生成《{title}》的最终深度研报汇总。\n\n"
-        "以下是从原始PDF各片段并行提取的子报告集合。请整合、去重、润色，输出统一结构化报告。\n\n"
-        "## 输出结构（Markdown）\n\n"
-        "### 一、核心财务指标汇总\n"
-        "合并所有财务数据，以Markdown表格呈现，注明报告期。\n\n"
-        "### 二、经营情况与管理层分析\n"
-        "按逻辑提炼整体经营情况、业务结构、核心战略。\n\n"
-        "### 三、关键财务明细表\n"
-        "整合营收结构、贷款/存款明细、分部数据等关键表格。\n\n"
-        "### 四、银行/行业特定指标\n"
-        "净息差、不良率、拨备覆盖率、资本充足率等专项指标及同比变化。\n\n"
-        "### 五、风险因素\n"
-        "管理层披露的关键风险，去重整理。\n\n"
-        "### 六、亮点与异常发现\n"
-        "全篇最核心的超预期/低于预期指标及趋势判断，附具体数据。\n\n"
-        "**重要提示：以上六个部分必须全部输出，每个部分尽可能详尽，不设长度限制。**\n\n"
-        f"--- 片段提取集合 ---\n\n{combined}"
+    prompt = (
+        f"**报告**：{title}（{report_type_cn}）{keyword_note}\n\n"
+        f"## 研究问题\n{questions_block}\n\n"
+        f"## 报告原文\n\n{prepared}"
     )
+
     try:
-        final_resp = await _groq_client.chat.completions.create(
+        resp = await _groq_client.chat.completions.create(
             model=GROQ_REPORT_MODEL,
             messages=[
-                {"role": "system", "content": _SYSTEM_SYNTHESIS},
-                {"role": "user",   "content": final_prompt},
+                {"role": "system", "content": system},
+                {"role": "user",   "content": prompt},
             ],
-            max_tokens=8192,
-            temperature=0.15,
+            max_tokens=4096,
+            temperature=0.2,
         )
-        final_content = final_resp.choices[0].message.content or ""
-        logger.info(f"Synthesis done: {len(final_content)} chars")
-        return final_content
+        content = resp.choices[0].message.content or ""
+        logger.info(f"Targeted analysis done: {len(content)} chars")
+        return content
     except Exception as e:
-        logger.warning(f"Synthesis failed, returning combined chunk output: {e}")
-        return combined
+        logger.warning(f"Targeted analysis failed: {e}")
+        return None
 
 
 async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
@@ -834,6 +894,13 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
             pdf_bytes = await _download_pdf(pdf_link)
             full_text = _extract_pdf_text(pdf_bytes)
             del pdf_bytes  # discard bytes immediately — no disk file written
+            # Sanity check: image-based or unreadable PDFs yield very little text
+            if len(full_text.strip()) < 3000:
+                logger.warning(
+                    f"PDF extraction too sparse ({len(full_text.strip())} chars) — "
+                    "likely image-based PDF, falling back to HTML text"
+                )
+                pdf_link = None
         except Exception as e:
             logger.warning(f"PDF download/extraction failed ({e}), falling back to HTML text")
             pdf_link = None
@@ -847,12 +914,23 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
             for i, t in enumerate(small_tables[:20]):
                 full_text += f"\n--- Table {i+1} ---\n{t}\n"
 
-    logger.info(f"Distilling {len(full_text):,} chars for {latest['title']}")
-    summary = await _groq_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
+    logger.info(f"Analysing {len(full_text):,} chars for {latest['title']}")
+
+    # Step 1: pull historical financials from DB to anchor questions
+    financial_context = await _get_financial_context(code)
+
+    # Step 2: generate targeted research questions based on trends/anomalies
+    questions = await _generate_research_questions(financial_context, latest["title"], focus_keywords)
+
+    # Step 3: answer those questions from a focused chunk of the report
+    summary = await _groq_targeted_analysis(full_text, latest["title"], rtype_label, questions, focus_keywords)
 
     if summary:
-        distilled_content = summary
-        summarized_by = "groq"
+        distilled_content = (
+            f"## 历史财务背景\n\n```\n{financial_context}\n```\n\n"
+            f"## 研究问题与分析\n\n{summary}"
+        )
+        summarized_by = "groq_targeted"
     else:
         distilled_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
         summarized_by = "keyword_extraction"
