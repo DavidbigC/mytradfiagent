@@ -9,11 +9,12 @@ interface Conversation {
   id: string;
   title: string;
   updated_at: string;
+  mode: string;
 }
 
 export default function ChatLayout() {
   const { token, logout } = useAuth();
-  const { t } = useT();
+  const { t, lang } = useT();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +22,9 @@ export default function ChatLayout() {
   const [debateInput, setDebateInput] = useState("");
   const [pendingDebate, setPendingDebate] = useState<string | null>(null);
   const debateInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const activeConv = conversations.find((c) => c.id === activeId);
+  const activeMode = activeConv?.mode ?? "normal";
 
   const loadConversations = useCallback(async () => {
     if (!token) return;
@@ -75,7 +79,7 @@ export default function ChatLayout() {
 
     // Create a new conversation for the debate
     try {
-      const { id } = await createConversation(token);
+      const { id } = await createConversation(token, "debate");
       setActiveId(id);
       setPendingDebate(question);
       setDebateInput("");
@@ -113,14 +117,21 @@ export default function ChatLayout() {
         onDebate={() => setShowDebateModal(true)}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        conversationMode={activeMode}
       />
 
       <main className="chat-main">
+        {activeId && activeMode === "debate" && (
+          <div className="mode-indicator debate">
+            ⚖ {lang === "zh" ? "辩论模式" : "Debate Mode"}
+          </div>
+        )}
         <ChatView
           conversationId={activeId}
           onConversationCreated={handleConversationCreated}
           pendingDebate={pendingDebate}
           onDebateStarted={() => setPendingDebate(null)}
+          conversationMode={activeMode}
         />
       </main>
 
