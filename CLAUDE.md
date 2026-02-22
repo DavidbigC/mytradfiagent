@@ -28,3 +28,5 @@ Format:
 ```
 
 Create `changes.md` if it doesn't exist. Always append — never overwrite previous entries.
+
+make sure you think about how to implement this on a server
