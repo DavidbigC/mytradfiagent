@@ -1209,3 +1209,36 @@
 - Preference persists in localStorage as "theme"
 - `data-theme="dark"` on `<html>` allows CSS variable overrides without JS class manipulation
 - Hardcoded `#fff` input backgrounds are overridden for dark mode via `[data-theme="dark"]` selectors
+
+## 2026-02-22 — CSS: mode badge, header indicator, and mode picker styles
+
+**What:** Added CSS styles for three new UI elements supporting per-conversation mode selection.
+
+**Files:**
+- `frontend/src/styles/index.css` — modified (added `position: relative` to `.chat-view`; appended styles for `.conv-mode-badge`, `.mode-indicator`, `.mode-indicator.debate`, `.mode-picker-overlay`, `.mode-picker`, `.mode-picker-prompt`, `.mode-picker-buttons`, `.mode-picker-btn`, `.mode-picker-btn.debate`, `.mode-picker-btn.normal`, `.mode-picker-cancel`)
+
+**Details:**
+- `.chat-view` now has `position: relative` so the `.mode-picker-overlay` (`position: absolute; inset: 0`) has a positioned ancestor
+- `.conv-mode-badge` is a small inline tag in the sidebar conversation list for debate-mode conversations
+- `.mode-indicator` is a thin strip below the chat header showing the current conversation mode; `.mode-indicator.debate` applies a warm gold tint
+- `.mode-picker-*` is an inline overlay prompt that appears in the chat area on first send, asking the user to choose debate vs normal mode
+
+## 2026-02-22 — Conversation mode indicator
+
+**What:** Added per-conversation debate/normal mode badge in sidebar and header strip in chat area; follow-up messages in debate conversations prompt for mode choice.
+
+**Files:**
+- `db.py` — added `mode TEXT DEFAULT 'normal'` column migration
+- `accounts.py` — `_create_conversation` and `new_conversation` accept `mode` param
+- `api_chat.py` — `list_conversations` returns `mode`; `create_conversation` accepts mode body
+- `frontend/src/api.ts` — `createConversation` sends mode in request body
+- `frontend/src/pages/ChatLayout.tsx` — derives `activeMode`; passes to Sidebar + ChatView; renders mode strip
+- `frontend/src/components/Sidebar.tsx` — renders `[辩论]`/`[Debate]` badge per conversation
+- `frontend/src/components/ChatView.tsx` — intercepts send in debate convos with messages; shows mode picker
+- `frontend/src/styles/index.css` — styles for badge, mode strip, and mode picker overlay
+
+**Details:**
+- Mode stored in DB; all existing conversations default to 'normal'
+- Debate conversations created with mode='debate' upfront (not inferred from title)
+- Mode picker only triggers in debate conversations with existing messages; first message in any conversation sends directly
+- Cancel in mode picker restores the typed message to input
