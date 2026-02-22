@@ -137,10 +137,18 @@ def _truncate_result(result: dict | list | str) -> str:
 
 
 async def _execute_single_tool(tc) -> dict:
-    """Execute a single tool call with error handling."""
-    name = tc.function.name
+    """Execute a single tool call with error handling. Accepts dict or OpenAI object."""
+    if isinstance(tc, dict):
+        name = tc["function"]["name"]
+        tc_id = tc["id"]
+        raw_args = tc["function"]["arguments"]
+    else:
+        name = tc.function.name
+        tc_id = tc.id
+        raw_args = tc.function.arguments
+
     try:
-        args = json.loads(tc.function.arguments)
+        args = json.loads(raw_args)
     except json.JSONDecodeError:
         args = {}
 
@@ -153,9 +161,87 @@ async def _execute_single_tool(tc) -> dict:
         result = {"error": str(e)}
 
     return {
-        "tool_call_id": tc.id,
+        "tool_call_id": tc_id,
         "result": result,
     }
+
+
+async def _stream_llm_response(
+    messages: list[dict],
+    tools: list | None,
+    on_token: Callable | None,
+) -> tuple[str, list[str], list[dict]]:
+    """Streaming LLM call. Emits clean content tokens (skipping think blocks) via on_token.
+
+    Returns (clean_content, thoughts, tool_calls_dicts).
+    """
+    full_content: list[str] = []
+    tool_calls_acc: dict[int, dict] = {}
+    has_tool_calls = False
+
+    # Buffer to detect and skip leading <think>...</think> before streaming
+    pre_think_buf = ""
+    past_think = False
+
+    stream = await client.chat.completions.create(
+        model=MINIMAX_MODEL,
+        messages=messages,
+        tools=tools or None,
+        stream=True,
+    )
+
+    async for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+
+        if delta.tool_calls:
+            has_tool_calls = True
+            for tc in delta.tool_calls:
+                acc = tool_calls_acc.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                if tc.id:
+                    acc["id"] = tc.id
+                if tc.function:
+                    if tc.function.name:
+                        acc["name"] += tc.function.name
+                    if tc.function.arguments:
+                        acc["arguments"] += tc.function.arguments
+
+        tok = delta.content or ""
+        if not tok:
+            continue
+        full_content.append(tok)
+
+        if has_tool_calls or not on_token:
+            continue
+
+        if past_think:
+            await on_token(tok)
+        else:
+            pre_think_buf += tok
+            if "</think>" in pre_think_buf:
+                after = pre_think_buf.split("</think>", 1)[1].lstrip("\n ")
+                past_think = True
+                if after:
+                    await on_token(after)
+            elif not pre_think_buf.startswith("<think>") and len(pre_think_buf) >= 7:
+                past_think = True
+                await on_token(pre_think_buf)
+                pre_think_buf = ""
+
+    raw = "".join(full_content)
+    thoughts = [m.strip() for m in re.findall(r"<think>(.*?)</think>", raw, re.DOTALL)]
+    clean = re.sub(r"<think>.*?</think>\s*", "", raw, re.DOTALL).strip()
+    tool_calls = []
+    for _, v in sorted(tool_calls_acc.items()):
+        args = v["arguments"]
+        try:
+            json.loads(args)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Tool call '{v['name']}' has invalid JSON args, replacing with {{}}")
+            args = "{}"
+        tool_calls.append({"id": v["id"], "type": "function", "function": {"name": v["name"], "arguments": args}})
+    return clean, thoughts, tool_calls
 
 
 async def run_agent(
@@ -164,6 +250,7 @@ async def run_agent(
     on_status: Callable | None = None,
     conversation_id: UUID | None = None,
     on_thinking: Callable | None = None,
+    on_token: Callable | None = None,
 ) -> dict:
     """Run the agent loop. Returns {"text": str, "files": [path, ...]}.
 
@@ -176,7 +263,7 @@ async def run_agent(
     """
     lock = get_user_lock(user_id)
     async with lock:
-        return await _run_agent_inner(user_message, user_id, on_status, conversation_id, on_thinking)
+        return await _run_agent_inner(user_message, user_id, on_status, conversation_id, on_thinking, on_token)
 
 
 async def _run_agent_inner(
@@ -185,6 +272,7 @@ async def _run_agent_inner(
     on_status: Callable | None = None,
     conversation_id: UUID | None = None,
     on_thinking: Callable | None = None,
+    on_token: Callable | None = None,
 ) -> dict:
     conv_id = conversation_id or await get_active_conversation(user_id)
 
@@ -212,6 +300,13 @@ async def _run_agent_inner(
         if on_thinking:
             try:
                 await on_thinking(source, label, content)
+            except Exception:
+                pass
+
+    async def _emit_token(tok: str):
+        if on_token:
+            try:
+                await on_token(tok)
             except Exception:
                 pass
 
@@ -260,46 +355,38 @@ async def _run_agent_inner(
         logger.info(f"Agent turn {turn + 1}/{MAX_TURNS}")
         await _emit(f"MiniMax · Thinking...")
 
-        response = await client.chat.completions.create(
-            model=MINIMAX_MODEL,
-            messages=messages,
-            tools=TOOL_SCHEMAS if TOOL_SCHEMAS else None,
+        clean, thoughts, tool_calls = await _stream_llm_response(
+            messages,
+            TOOL_SCHEMAS if TOOL_SCHEMAS else None,
+            on_token=_emit_token,
         )
 
-        msg = response.choices[0].message
-
-        # Extract and emit <think> blocks from every turn, stripped before they
-        # enter conversation history or the final response text.
-        raw = msg.content or ""
-        thoughts = re.findall(r"<think>(.*?)</think>", raw, flags=re.DOTALL)
         if thoughts:
             if turn == 0:
                 think_label = "Turn 1 · Analysis"
-            elif not msg.tool_calls:
+            elif not tool_calls:
                 think_label = f"Turn {turn + 1} · Synthesis"
             else:
                 tools_str = ", ".join(prev_tool_names) if prev_tool_names else "tools"
                 think_label = f"Turn {turn + 1} · After {tools_str}"
             for thought in thoughts:
-                await _emit_thinking(f"agent_t{turn + 1}", think_label, thought.strip())
-        clean = re.sub(r"<think>.*?</think>\s*", "", raw, flags=re.DOTALL).strip()
+                await _emit_thinking(f"agent_t{turn + 1}", think_label, thought)
 
-        msg_dict = _message_to_dict(msg)
-        if thoughts:
-            msg_dict["content"] = clean  # don't echo <think> tags back to the model
+        msg_dict: dict = {"role": "assistant", "content": clean}
+        if tool_calls:
+            msg_dict["tool_calls"] = tool_calls
         messages.append(msg_dict)
 
-        # Persist assistant message
         await save_message(
-            conv_id, "assistant", clean or msg.content,
-            tool_calls=msg_dict.get("tool_calls"),
+            conv_id, "assistant", clean,
+            tool_calls=tool_calls or None,
         )
 
-        if not msg.tool_calls:
+        if not tool_calls:
             return {"text": clean or "I couldn't generate a response.", "files": files}
 
         # Show which tools are running
-        tool_names = [tc.function.name for tc in msg.tool_calls]
+        tool_names = [tc["function"]["name"] for tc in tool_calls]
         prev_tool_names = tool_names
         await _emit(f"Running: {', '.join(tool_names)}...")
 
@@ -311,7 +398,7 @@ async def _run_agent_inner(
             # Execute all tool calls in parallel
             t0 = time.time()
             results = await asyncio.gather(
-                *[_execute_single_tool(tc) for tc in msg.tool_calls]
+                *[_execute_single_tool(tc) for tc in tool_calls]
             )
             elapsed = time.time() - t0
         finally:
@@ -469,27 +556,3 @@ async def _run_debate_inner(
 
     await save_message(conv_id, "assistant", text)
     return {"text": text, "files": files}
-
-
-def _message_to_dict(msg) -> dict:
-    """Convert an OpenAI message object to a serializable dict."""
-    d = {"role": msg.role, "content": msg.content or ""}
-    if msg.tool_calls:
-        tool_calls = []
-        for tc in msg.tool_calls:
-            args = tc.function.arguments
-            try:
-                json.loads(args)
-            except (json.JSONDecodeError, TypeError):
-                logger.warning(
-                    f"Tool call '{tc.function.name}' returned invalid JSON args "
-                    f"(id={tc.id}), replacing with {{}}"
-                )
-                args = "{}"
-            tool_calls.append({
-                "id": tc.id,
-                "type": "function",
-                "function": {"name": tc.function.name, "arguments": args},
-            })
-        d["tool_calls"] = tool_calls
-    return d

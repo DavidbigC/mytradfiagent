@@ -325,12 +325,15 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             "data": json.dumps({"source": source, "label": label, "content": content}, ensure_ascii=False),
         })
 
+    async def on_token(tok: str):
+        run.put({"event": "token", "data": tok})
+
     async def run_in_background():
         try:
             if body.mode == "debate":
                 result = await run_debate(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
             else:
-                result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
+                result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking, on_token=on_token)
 
             text = result.get("text", "")
             files = result.get("files", [])

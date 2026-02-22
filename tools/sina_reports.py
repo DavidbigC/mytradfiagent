@@ -3,22 +3,28 @@
 Supports yearly, Q1, mid-year (Q2), and Q3 reports for Chinese A-share stocks.
 """
 
+import asyncio
 import re
 import logging
 import httpx
+import fitz  # pymupdf
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
-from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL
+from config import GROQ_API_KEY, GROQ_BASE_URL, GROQ_REPORT_MODEL
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
 
 _REPORTS_BASE = Path("output/reports")
 
-# Minimax client for full-report reading (large token context window)
-_minimax_client: AsyncOpenAI | None = (
-    AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL) if MINIMAX_API_KEY else None
+# Groq client for PDF report reading (113k context window, chunked parallel)
+_groq_client: AsyncOpenAI | None = (
+    AsyncOpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL) if GROQ_API_KEY else None
 )
+
+_CHUNK_SIZE    = 10_000
+_CHUNK_OVERLAP = 200
+_MAX_PARALLEL  = 4
 
 SINA_BASE = "https://vip.stock.finance.sina.com.cn"
 
@@ -590,125 +596,160 @@ def _prepare_report_text(full_text: str, focus_keywords: list[str] | None = None
         filtered = filtered[:max_chars] + "\n\n...[报告过长，已截断至前80000字]"
     return filtered
 
-async def _minimax_summarize_report(
+def _make_chunks(text: str) -> list[str]:
+    """Split text into overlapping chunks for parallel LLM processing."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + _CHUNK_SIZE, len(text))
+        chunks.append(text[start:end + _CHUNK_OVERLAP])
+        start += _CHUNK_SIZE
+    return chunks
+
+
+async def _download_pdf(url: str) -> bytes:
+    """Download PDF bytes from Sina Finance file server."""
+    async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
+        resp = await client.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": SINA_BASE,
+        })
+        resp.raise_for_status()
+    logger.info(f"PDF downloaded: {len(resp.content):,} bytes from {url}")
+    return resp.content
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Extract plain text from PDF bytes using pymupdf. No file written to disk."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    pages = [page.get_text("text") for page in doc if page.get_text("text").strip()]
+    doc.close()
+    text = "\n".join(pages)
+    logger.info(f"PDF text extracted: {len(text):,} chars from {len(pages)} pages")
+    return text
+
+
+_SYSTEM_EXTRACT = """你是一名专业的卖方金融分析师，任务是从财务报告片段中进行无损数据提取。
+
+核心原则：
+1. 穷举提取——本片段中出现的每一个数字、比率、金额、百分比、增减变化都必须提取，一个都不能遗漏。
+2. 数字必须100%来自原文，严禁编造、推算或四舍五入后不标注。
+3. 所有表格必须以完整Markdown表格格式保留，包括每一行每一列，绝对不得省略。
+4. 每个数据必须标明报告期（年度、季度、具体日期）。
+5. 管理层原话中的关键判断、前瞻性表述、行业分析也必须完整引用，不得压缩。
+6. 若本片段确实无财务数据，简短说明后停止，不要填充废话。
+7. 输出长度不设上限——有多少数据就输出多少，宁多勿缺。"""
+
+_SYSTEM_SYNTHESIS = """你是一名资深卖方金融分析师，将多份片段提取报告整合为一份极度详尽的深度研报。
+
+核心原则：
+1. 保留所有数据——每一个出现在片段中的数字、表格、比率都必须出现在最终报告中，严禁丢失。
+2. 合并同类数据，消除重复，但保留所有不同报告期的对比数据。
+3. 严禁编造，严禁在片段数据之外添加任何数字。
+4. 输出不设长度限制，以数据完整性为第一优先级。
+5. 排版清晰：大量使用Markdown表格，数据密集段落用表格而非文字呈现。"""
+
+
+async def _groq_summarize_report(
     full_text: str,
     title: str,
     report_type_cn: str,
     focus_keywords: list[str] | None = None,
 ) -> str | None:
-    """Preprocess report text then summarize with Minimax.
+    """Chunk report text and summarize in parallel with Groq.
 
     Returns a structured Markdown string suitable for caching, or None on failure.
-    Output includes both Minimax narrative AND preserved financial tables (Option B).
+    PDF bytes are never written to disk — text is extracted in memory only.
     """
-    if not _minimax_client:
-        logger.warning("Minimax client not initialised (MINIMAX_API_KEY missing?) — falling back to keyword extraction")
+    if not _groq_client:
+        logger.warning("Groq client not initialised (GROQ_API_KEY missing?) — falling back to keyword extraction")
         return None
 
-    minimax_input = _prepare_report_text(full_text, focus_keywords, max_chars=1_500_000)
-
-    chunk_size = 30_000
-    overlap = 800
-    chunks = []
-    start = 0
-    while start < len(minimax_input):
-        end = min(start + chunk_size + overlap, len(minimax_input))
-        chunks.append(minimax_input[start:end])
-        start += chunk_size
+    prepared = _prepare_report_text(full_text, focus_keywords, max_chars=999_999)
+    chunks = _make_chunks(prepared)
+    focus_note = f"**重点关注指标**：{', '.join(focus_keywords)}\n\n" if focus_keywords else ""
 
     logger.info(
-        f"Minimax input: {len(full_text):,} → {len(minimax_input):,} chars. "
-        f"Split into {len(chunks)} chunks of ~{chunk_size} chars."
+        f"Groq input: {len(full_text):,} → {len(prepared):,} chars, "
+        f"{len(chunks)} chunks of ~{_CHUNK_SIZE} chars"
     )
 
-    focus_note = ""
-    if focus_keywords:
-        focus_note = f"\n**重点关注指标**：{', '.join(focus_keywords)}"
+    sem = asyncio.Semaphore(_MAX_PARALLEL)
 
-    system = (
-        "你是一名专业的卖方金融分析师。请仔细阅读以下中文财务报告的部分内容，提取关键财务数据和管理层讨论的重点。"
-        "要求：数字精确，注明报告期，重点财务表格必须以Markdown表格格式完整提取。"
-        "如果该部分内容没有相应的关键数据或业务讨论，请直接说明，切勿编造虚假数据。"
-    )
-
-    import asyncio
-    _sem = asyncio.Semaphore(4)  # max 4 concurrent chunk calls
-
-    async def process_chunk(idx: int, chunk: str) -> str:
+    async def _process_chunk(idx: int, chunk: str) -> str:
         prompt = (
-            f"**报告**：{title}（{report_type_cn}）{focus_note}\n\n"
-            f"注意：这是该报告长文本的第 {idx + 1} 部分（共 {len(chunks)} 部分）。\n\n"
-            "## 提取任务\n"
-            "请按以下结构输出核心内容：\n"
-            "### 一、本节核心财务与业务数据\n"
-            "（若包含相关表格，请完整保留。如提到了资产状况、财务指标、产品明细等，请全部提取出来）\n"
-            "### 二、管理层讨论重点摘要\n"
-            "（本段提及的经营总结、行业情况或未来计划）\n"
-            "### 三、风险与异常关注\n"
-            "（本段提及的具体风险隐患或值得关注的异常点）\n\n"
-            f"以下是第 {idx + 1} 部分的报告内容：\n\n{chunk}"
+            f"**报告**：{title}（{report_type_cn}）\n"
+            f"{focus_note}"
+            f"这是报告文本的第 {idx + 1}/{len(chunks)} 片段。请对本片段做穷举式数据提取，不遗漏任何数字。\n\n"
+            "## 提取结构\n\n"
+            "### 一、财务数据全量提取\n"
+            "列出本片段中出现的每一个财务数字，包括：收入、利润、资产、负债、比率、增减幅度、每股数据等。\n"
+            "遇到表格：完整复现为Markdown表格，一行一列都不能省。\n"
+            "遇到散列数字：逐条列出，格式：[指标名] [数值] [报告期]。\n\n"
+            "### 二、管理层表述全量提取\n"
+            "本片段中管理层对经营情况、战略、行业、风险的所有原话或核心表述，逐条引用，不压缩。\n\n"
+            "### 三、风险与异常全量提取\n"
+            "本片段中所有风险提示、异常数据、同比大幅变动的指标，逐条列出并附原文数据。\n\n"
+            f"--- 片段内容 ---\n\n{chunk}"
         )
-        async with _sem:
+        async with sem:
             try:
-                resp = await _minimax_client.chat.completions.create(
-                    model=MINIMAX_MODEL,
+                resp = await _groq_client.chat.completions.create(
+                    model=GROQ_REPORT_MODEL,
                     messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
+                        {"role": "system", "content": _SYSTEM_EXTRACT},
+                        {"role": "user",   "content": prompt},
                     ],
-                    max_tokens=4096,
+                    max_tokens=8192,
+                    temperature=0.1,
                 )
                 content = resp.choices[0].message.content or ""
-                logger.info(f"Minimax chunk {idx + 1}/{len(chunks)} finished: {len(content)} chars")
-                return f"## 报告第 {idx + 1} 部分提取结果\n\n{content}"
+                logger.info(f"Groq chunk {idx + 1}/{len(chunks)} done: {len(content)} chars")
+                return f"## 片段 {idx + 1}\n\n{content}"
             except Exception as e:
-                logger.warning(f"Minimax chunk {idx + 1} failed: {e}")
-                return f"## 报告第 {idx + 1} 部分提取结果\n\n> 处理失败: {e}"
+                logger.warning(f"Groq chunk {idx + 1} failed: {e}")
+                return f"## 片段 {idx + 1}\n\n> 处理失败: {e}"
 
-    tasks = [process_chunk(i, c) for i, c in enumerate(chunks)]
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*[_process_chunk(i, c) for i, c in enumerate(chunks)])
+    combined = "\n\n---\n\n".join(results)
 
-    combined_text = "\n\n---\n\n".join(results)
-
-    # --- Final Cleanup Synthesis Pass ---
-    logger.info("Starting final cleanup synthesis pass...")
-    final_system = (
-        "你是一名资深的卖方金融分析师。你的任务是将一份长篇财务报告的多个片段提取结果，综合并重新编排成一份完整的、排版精美、高度可读的Markdown研报。"
-        "要求：严格基于下方各个片段的内容，严禁编造数据；直接输出报告正文。去除所有诸如'报告第 X 部分提取结果'、'根据提取的第X部分'等机械冗余语句。"
-    )
-    
+    # Synthesis pass
+    logger.info("Starting synthesis pass...")
     final_prompt = (
-        f"**任务目标**：生成《{title}》的最终深度研报汇总。\n\n"
-        "以下内容是AI助理从原始长报告各个分段中并行提取出的子报告集合。请将它们合并、去重、润色，输出一份统一的结构化报告。\n\n"
-        "## 请以Markdown输出，结构如下：\n"
-        "### 一、核心财务指标\n"
-        "合并并汇总所有相关财务数据（以Markdown表格列出）。\n\n"
-        "### 二、管理层讨论与分析摘要\n"
-        "按逻辑连贯地提炼报告期内总体经营情况、业务板块结构及核心战略。\n\n"
-        "### 三、财务报表关键明细\n"
-        "整合片段中提取出的关键表格（如营收明细、产品线结构、行业特定指标等），将分散的表格或数据点合并为清晰的视图。如果数据重复，请自动合并整理。\n\n"
-        "### 四、风险因素\n"
-        "汇总并去重管理层提示的关键风险及具体依据。\n\n"
-        "### 五、亮点与异常发现\n"
-        "总结全篇最核心的焦点、趋势或超预期/低于预期的指标。\n\n"
-        f"---片段提取结果集合---\n\n{combined_text}"
+        f"**任务**：生成《{title}》的最终深度研报汇总。\n\n"
+        "以下是从原始PDF各片段并行提取的子报告集合。请整合、去重、润色，输出统一结构化报告。\n\n"
+        "## 输出结构（Markdown）\n\n"
+        "### 一、核心财务指标汇总\n"
+        "合并所有财务数据，以Markdown表格呈现，注明报告期。\n\n"
+        "### 二、经营情况与管理层分析\n"
+        "按逻辑提炼整体经营情况、业务结构、核心战略。\n\n"
+        "### 三、关键财务明细表\n"
+        "整合营收结构、贷款/存款明细、分部数据等关键表格。\n\n"
+        "### 四、银行/行业特定指标\n"
+        "净息差、不良率、拨备覆盖率、资本充足率等专项指标及同比变化。\n\n"
+        "### 五、风险因素\n"
+        "管理层披露的关键风险，去重整理。\n\n"
+        "### 六、亮点与异常发现\n"
+        "全篇最核心的超预期/低于预期指标及趋势判断，附具体数据。\n\n"
+        "**重要提示：以上六个部分必须全部输出，每个部分尽可能详尽，不设长度限制。**\n\n"
+        f"--- 片段提取集合 ---\n\n{combined}"
     )
-
     try:
-        final_resp = await _minimax_client.chat.completions.create(
-            model=MINIMAX_MODEL,
+        final_resp = await _groq_client.chat.completions.create(
+            model=GROQ_REPORT_MODEL,
             messages=[
-                {"role": "system", "content": final_system},
-                {"role": "user", "content": final_prompt},
+                {"role": "system", "content": _SYSTEM_SYNTHESIS},
+                {"role": "user",   "content": final_prompt},
             ],
-            max_tokens=64000,
+            max_tokens=8192,
+            temperature=0.15,
         )
         final_content = final_resp.choices[0].message.content or ""
-        logger.info(f"Final cleanup finished: {len(final_content)} chars")
+        logger.info(f"Synthesis done: {len(final_content)} chars")
         return final_content
     except Exception as e:
-        logger.warning(f"Final cleanup failed, falling back to raw combined text: {e}")
-        return combined_text
+        logger.warning(f"Synthesis failed, returning combined chunk output: {e}")
+        return combined
 
 
 async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
@@ -785,28 +826,33 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
         if rows:
             tables.append("\n".join(rows))
 
-    full_text = body_text
-    if tables:
-        # Skip oversized tables — Sina embeds the entire report as one giant
-        # HTML table (~622k chars). soup.get_text() already captured that
-        # content in body_text, so appending it again just doubles the input.
+    pdf_link = _extract_pdf_link(detail_html)
+
+    # Prefer PDF text (full report) over HTML body (usually just a summary bulletin)
+    if pdf_link:
+        try:
+            pdf_bytes = await _download_pdf(pdf_link)
+            full_text = _extract_pdf_text(pdf_bytes)
+            del pdf_bytes  # discard bytes immediately — no disk file written
+        except Exception as e:
+            logger.warning(f"PDF download/extraction failed ({e}), falling back to HTML text")
+            pdf_link = None
+
+    if not pdf_link:
+        # HTML fallback: body text + small embedded tables
+        full_text = body_text
         small_tables = [t for t in tables if len(t) <= 50_000]
         if small_tables:
             full_text += "\n\n=== FINANCIAL TABLES ===\n"
             for i, t in enumerate(small_tables[:20]):
                 full_text += f"\n--- Table {i+1} ---\n{t}\n"
-        skipped = len(tables) - len(small_tables)
-        if skipped:
-            logger.info(f"Skipped {skipped} oversized table(s) (already in body text)")
-
-    pdf_link = _extract_pdf_link(detail_html)
 
     logger.info(f"Distilling {len(full_text):,} chars for {latest['title']}")
-    summary = await _minimax_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
+    summary = await _groq_summarize_report(full_text, latest["title"], rtype_label, focus_keywords)
 
     if summary:
         distilled_content = summary
-        summarized_by = "minimax"
+        summarized_by = "groq"
     else:
         distilled_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
         summarized_by = "keyword_extraction"

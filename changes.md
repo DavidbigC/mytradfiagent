@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-02-22 — Switch report summarizer from Minimax to Groq (PDF-based chunked extraction)
+
+**What:** Replaced Minimax LLM summarization in `sina_reports.py` with Groq `openai/gpt-oss-20b` using full-PDF extraction and parallel chunked processing for higher accuracy and zero hallucination.
+
+**Files:**
+- `tools/sina_reports.py` — removed Minimax client; added `_download_pdf`, `_extract_pdf_text`, `_make_chunks`, `_groq_summarize_report`; updated `fetch_company_report` to prefer PDF text over HTML bulletin
+- `config.py` — added `GROQ_API_KEY`, `GROQ_BASE_URL`, `GROQ_REPORT_MODEL`
+- `requirements.txt` — added `pymupdf`
+
+**Details:**
+- PDF downloaded in memory (bytes), text extracted via pymupdf, bytes discarded immediately — no temp file on disk
+- Report text chunked at 10k chars with 200-char overlap, processed in parallel (semaphore=4)
+- Each chunk uses exhaustive extraction prompt (穷举提取, no output limit, low temp=0.1)
+- Synthesis pass merges all chunks into final structured Markdown
+- Falls back to HTML body text if no PDF link found, and to keyword extraction if Groq fails
+
 ## 2026-02-21 — Market data pipeline (hourly OHLCV for A-shares, plain PostgreSQL)
 
 **What:** Dropped TimescaleDB in favour of plain PostgreSQL 17 (local). Fixed BaoStock API usage (`query_stock_basic()` takes no `fields` arg; `time` field is `YYYYMMDDHHmmssSSS` not `HH:MM:SS`). Pipeline verified end-to-end with 5 stocks.

@@ -20,3 +20,4 @@ playwright
 pypinyin
 baostock
 psycopg2-binary
+pymupdf
