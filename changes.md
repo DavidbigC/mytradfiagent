@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-02-22 — Real-time think-block streaming for all agent LLM calls
+
+**What:** Extended streaming to cover `<think>` content and all non-main-loop LLM calls so users see something immediately even while the model is thinking.
+
+**Files:**
+- `agent.py` — updated `_stream_llm_response` with a state-machine that streams `<think>` tokens in real-time via a new `on_thinking_chunk` callback; planning turn now uses `_stream_llm_response`; max-turns summary now uses `_stream_llm_response`
+
+**Details:**
+- `_stream_llm_response` now has three states: `pre` (buffering to detect `<think>`), `think` (streaming to `on_thinking_chunk` as tokens arrive), `post` (streaming to `on_token`)
+- Planning turn: think content streams to source `"agent_plan_think"` / label `"Planning · Thinking"` in real-time; the resolved plan still emits as `"Research Plan"` thinking block after
+- Main agent loop: each turn pre-computes a think label and source; `<think>` content streams in real-time instead of being buffered until `</think>`; removed the now-redundant post-stream `_emit_thinking` call
+- Max-turns summary: was a non-streaming call (final answer blocked until complete); now streams tokens via `_emit_token` and think content via `on_thinking_chunk`
+
 ## 2026-02-22 — Targeted DB-anchored report analysis (replaces exhaustive summarization)
 
 **What:** Replaced the full-report exhaustive distillation approach with a three-step targeted Q&A flow: pull historical DB financials → generate research questions from trends → answer them from a focused 40k-char chunk of the report.

@@ -13,9 +13,7 @@ from openai import AsyncOpenAI
 from config import GROQ_API_KEY, GROQ_BASE_URL, GROQ_REPORT_MODEL
 
 logger = logging.getLogger(__name__)
-from pathlib import Path
 
-_REPORTS_BASE = Path("output/reports")
 
 # Groq client for PDF report reading (113k context window, chunked parallel)
 _groq_client: AsyncOpenAI | None = (
@@ -237,16 +235,6 @@ _SKIP_CHAPTER_KEYWORDS = [
 ]
 
 
-def _get_cache_path(stock_code: str, report_year: int, report_type: str) -> Path:
-    """Return the .md file path for a cached distilled report.
-
-    Structure: output/reports/{stock_code}/{year}_{code}_{type}.md
-    Example:   output/reports/600036/2024_600036_yearly.md
-    One subfolder per stock code — max ~40 files per directory for a 10-year window.
-    """
-    return _REPORTS_BASE / stock_code / f"{report_year}_{stock_code}_{report_type}.md"
-
-
 def _extract_report_year(title: str, report_date: str) -> int:
     """Extract the reporting period year from report title or filing date.
 
@@ -260,63 +248,6 @@ def _extract_report_year(title: str, report_date: str) -> int:
     if report_date and len(report_date) >= 4:
         return int(report_date[:4])
     return 2024  # should never reach here
-
-
-async def _check_report_cache(stock_code: str, report_type: str, report_year: int) -> str | None:
-    """Check if a distilled report already exists in DB and on disk.
-
-    Returns the filepath string if valid, None if cache miss or file missing.
-    """
-    try:
-        from db import get_pool
-        pool = await get_pool()
-        row = await pool.fetchrow(
-            "SELECT filepath FROM report_cache "
-            "WHERE stock_code=$1 AND report_type=$2 AND report_year=$3",
-            stock_code, report_type, report_year,
-        )
-        if not row:
-            return None
-        filepath = row["filepath"]
-        if not Path(filepath).exists():
-            logger.warning(f"Cache DB entry exists but file missing: {filepath}")
-            return None
-        return filepath
-    except Exception as e:
-        logger.warning(f"Cache lookup failed: {e}")
-        return None
-
-
-async def _save_report_cache(
-    stock_code: str,
-    report_type: str,
-    report_year: int,
-    report_date: str,
-    title: str,
-    filepath: str,
-    source_url: str,
-) -> None:
-    """Upsert a cache entry. Silently ignores failures (cache is best-effort)."""
-    try:
-        from db import get_pool
-        pool = await get_pool()
-        await pool.execute(
-            """
-            INSERT INTO report_cache
-                (stock_code, report_type, report_year, report_date, title, filepath, source_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (stock_code, report_type, report_year) DO UPDATE
-                SET filepath    = EXCLUDED.filepath,
-                    report_date = EXCLUDED.report_date,
-                    title       = EXCLUDED.title,
-                    source_url  = EXCLUDED.source_url
-            """,
-            stock_code, report_type, report_year,
-            report_date, title, filepath, source_url,
-        )
-        logger.info(f"Cache DB entry saved: {stock_code} {report_type} {report_year}")
-    except Exception as e:
-        logger.warning(f"Cache DB write failed: {e}")
 
 
 # Regex to match TOC entries with 第X章/节 prefix.
@@ -815,8 +746,9 @@ async def _groq_targeted_analysis(
 async def fetch_company_report(stock_code: str, report_type: str, focus_keywords: list[str] | None = None) -> dict:
     """Fetch the latest financial report for a Chinese A-share company.
 
-    Fast path: check report_cache DB → if hit, read local .md file and return.
-    Slow path: fetch from Sina Finance, distil with Minimax, save to disk + DB, return.
+    Always fetches live from Sina Finance: downloads the PDF (or falls back to HTML),
+    generates targeted research questions from DB financial history, and answers them
+    with Groq on a focused chunk of the report.
     """
     code = stock_code.strip()
     if len(code) != 6 or not code.isdigit():
@@ -841,25 +773,7 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
     latest = reports[0]
     logger.info(f"Latest {report_type} report for {code}: {latest['title']} ({latest['date']})")
 
-    # ── Step 2: Cache check ───────────────────────────────────────────────────
-    report_year = _extract_report_year(latest["title"], latest["date"])
-    cached_filepath = await _check_report_cache(code, report_type, report_year)
-    if cached_filepath:
-        logger.info(f"Cache hit: {cached_filepath}")
-        content = Path(cached_filepath).read_text(encoding="utf-8")
-        return {
-            "stock_code": code,
-            "report_type": rtype_label,
-            "title": latest["title"],
-            "date": latest["date"],
-            "report_url": latest["url"],
-            "content": content,
-            "summarized_by": "cache",
-            "cache_path": cached_filepath,
-            "all_reports": [{"date": r["date"], "title": r["title"]} for r in reports[:5]],
-        }
-
-    # ── Step 3: Cache miss — fetch and distil ─────────────────────────────────
+    # ── Step 2: Fetch report detail page ─────────────────────────────────────
     try:
         detail_html = await _fetch_page(latest["url"])
     except Exception as e:
@@ -925,6 +839,8 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
     # Step 3: answer those questions from a focused chunk of the report
     summary = await _groq_targeted_analysis(full_text, latest["title"], rtype_label, questions, focus_keywords)
 
+    # ── Step 4: Build MD with metadata header ────────────────────────────────
+    report_year = _extract_report_year(latest["title"], latest["date"])
     if summary:
         distilled_content = (
             f"## 历史财务背景\n\n```\n{financial_context}\n```\n\n"
@@ -935,7 +851,6 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
         distilled_content = _extract_key_sections(full_text, extra_keywords=focus_keywords)
         summarized_by = "keyword_extraction"
 
-    # ── Step 4: Build full MD with metadata header and save to cache ──────────
     md_header = (
         f"# {latest['title']}\n\n"
         f"**报告期**: {report_year} {rtype_label}  \n"
@@ -947,18 +862,6 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
     )
     full_md = md_header + distilled_content
 
-    cache_path = _get_cache_path(code, report_year, report_type)
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(full_md, encoding="utf-8")
-        await _save_report_cache(
-            code, report_type, report_year,
-            latest["date"], latest["title"], str(cache_path), latest["url"],
-        )
-        logger.info(f"Report cached to {cache_path}")
-    except Exception as e:
-        logger.warning(f"Failed to write cache: {e}")
-
     return {
         "stock_code": code,
         "report_type": rtype_label,
@@ -968,6 +871,5 @@ async def fetch_company_report(stock_code: str, report_type: str, focus_keywords
         "pdf_url": pdf_link,
         "content": full_md,
         "summarized_by": summarized_by,
-        "cache_path": str(cache_path),
         "all_reports": [{"date": r["date"], "title": r["title"]} for r in reports[:5]],
     }

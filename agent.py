@@ -170,18 +170,27 @@ async def _stream_llm_response(
     messages: list[dict],
     tools: list | None,
     on_token: Callable | None,
+    on_thinking_chunk: Callable | None = None,
 ) -> tuple[str, list[str], list[dict]]:
-    """Streaming LLM call. Emits clean content tokens (skipping think blocks) via on_token.
+    """Streaming LLM call.
 
-    Returns (clean_content, thoughts, tool_calls_dicts).
+    - Emits <think> content incrementally via on_thinking_chunk as it arrives.
+    - Emits clean content tokens via on_token (after the think block).
+    - Returns (clean_content, thoughts, tool_calls_dicts).
+
+    State machine:
+      "pre"   — buffering until we know whether the stream starts with <think>
+      "think" — inside <think>…</think>, streaming to on_thinking_chunk
+      "post"  — past </think>, streaming to on_token
     """
     full_content: list[str] = []
     tool_calls_acc: dict[int, dict] = {}
     has_tool_calls = False
 
-    # Buffer to detect and skip leading <think>...</think> before streaming
-    pre_think_buf = ""
-    past_think = False
+    state = "pre"
+    pre_buf = ""
+    think_buf = ""
+    think_emitted = 0  # chars of think_buf already sent via on_thinking_chunk
 
     stream = await client.chat.completions.create(
         model=MINIMAX_MODEL,
@@ -212,26 +221,75 @@ async def _stream_llm_response(
             continue
         full_content.append(tok)
 
-        if has_tool_calls or not on_token:
+        if has_tool_calls:
             continue
 
-        if past_think:
-            await on_token(tok)
-        else:
-            pre_think_buf += tok
-            if "</think>" in pre_think_buf:
-                after = pre_think_buf.split("</think>", 1)[1].lstrip("\n ")
-                past_think = True
-                if after:
-                    await on_token(after)
-            elif not pre_think_buf.startswith("<think>") and len(pre_think_buf) >= 7:
-                past_think = True
-                await on_token(pre_think_buf)
-                pre_think_buf = ""
+        if state == "post":
+            if on_token:
+                await on_token(tok)
+
+        elif state == "think":
+            think_buf += tok
+            if "</think>" in think_buf:
+                # Emit any unemitted think content before the closing tag
+                think_part = think_buf.split("</think>", 1)[0]
+                unemitted = think_part[think_emitted:]
+                if unemitted and on_thinking_chunk:
+                    await on_thinking_chunk(unemitted)
+                # Switch to post-think and emit content that follows </think>
+                rest = think_buf.split("</think>", 1)[1].lstrip("\n ")
+                state = "post"
+                think_buf = ""
+                think_emitted = 0
+                if rest and on_token:
+                    await on_token(rest)
+            else:
+                # Stream incremental think content
+                new_content = think_buf[think_emitted:]
+                if new_content and on_thinking_chunk:
+                    await on_thinking_chunk(new_content)
+                    think_emitted = len(think_buf)
+
+        else:  # state == "pre"
+            pre_buf += tok
+            if "<think>" in pre_buf:
+                before, after_tag = pre_buf.split("<think>", 1)
+                if before and on_token:
+                    await on_token(before)
+                state = "think"
+                pre_buf = ""
+                if after_tag:
+                    think_buf = after_tag
+                    if "</think>" in think_buf:
+                        # Opening and closing tag arrived in the same batch
+                        think_part = think_buf.split("</think>", 1)[0]
+                        if think_part and on_thinking_chunk:
+                            await on_thinking_chunk(think_part)
+                        rest = think_buf.split("</think>", 1)[1].lstrip("\n ")
+                        state = "post"
+                        think_buf = ""
+                        think_emitted = 0
+                        if rest and on_token:
+                            await on_token(rest)
+                    else:
+                        if on_thinking_chunk:
+                            await on_thinking_chunk(after_tag)
+                        think_emitted = len(think_buf)
+            elif len(pre_buf) >= 7 and not pre_buf.startswith("<"):
+                # Not a think block — start streaming immediately
+                state = "post"
+                if on_token:
+                    await on_token(pre_buf)
+                pre_buf = ""
+            # else: keep accumulating
+
+    # Flush any remaining pre_buf (response had no think block, buffer never hit 7 chars)
+    if state == "pre" and pre_buf and on_token:
+        await on_token(pre_buf)
 
     raw = "".join(full_content)
     thoughts = [m.strip() for m in re.findall(r"<think>(.*?)</think>", raw, re.DOTALL)]
-    clean = re.sub(r"<think>.*?</think>\s*", "", raw, re.DOTALL).strip()
+    clean = re.sub(r"<think>.*?</think>\s*", "", raw, flags=re.DOTALL).strip()
     tool_calls = []
     for _, v in sorted(tool_calls_acc.items()):
         args = v["arguments"]
@@ -319,15 +377,18 @@ async def _run_agent_inner(
     await _emit("Planning...")
     planning_messages = messages + [{"role": "user", "content": get_planning_prompt()}]
     try:
-        plan_resp = await client.chat.completions.create(
-            model=MINIMAX_MODEL,
-            messages=planning_messages,
-            tools=None,
+        async def _on_plan_think_chunk(chunk: str):
+            # Stream planning think tokens in real-time to a separate source
+            await _emit_thinking("agent_plan_think", "Planning · Thinking", chunk)
+
+        # Stream the planning call so think content is visible in real-time
+        # on_token=None because the plan text itself is not the final answer
+        plan, _, _ = await _stream_llm_response(
+            planning_messages,
+            None,
+            on_token=None,
+            on_thinking_chunk=_on_plan_think_chunk,
         )
-        plan_raw = plan_resp.choices[0].message.content or ""
-        for m in re.finditer(r"<think>(.*?)</think>", plan_raw, flags=re.DOTALL):
-            await _emit_thinking("agent_plan", "Planning", m.group(1).strip())
-        plan = re.sub(r"<think>.*?</think>\s*", "", plan_raw, flags=re.DOTALL).strip()
 
         # Parse intent from first line
         first_line = plan.split("\n", 1)[0].strip().upper()
@@ -355,22 +416,25 @@ async def _run_agent_inner(
         logger.info(f"Agent turn {turn + 1}/{MAX_TURNS}")
         await _emit(f"MiniMax · Thinking...")
 
-        clean, thoughts, tool_calls = await _stream_llm_response(
+        # Pre-compute the think label for real-time streaming (before we know tool_calls)
+        if turn == 0:
+            think_label = "Turn 1 · Analysis"
+        elif prev_tool_names:
+            think_label = f"Turn {turn + 1} · After {', '.join(prev_tool_names)}"
+        else:
+            think_label = f"Turn {turn + 1} · Thinking"
+
+        think_source = f"agent_t{turn + 1}"
+
+        async def _on_think_chunk(chunk: str, _src=think_source, _lbl=think_label):
+            await _emit_thinking(_src, _lbl, chunk)
+
+        clean, _, tool_calls = await _stream_llm_response(
             messages,
             TOOL_SCHEMAS if TOOL_SCHEMAS else None,
             on_token=_emit_token,
+            on_thinking_chunk=_on_think_chunk,
         )
-
-        if thoughts:
-            if turn == 0:
-                think_label = "Turn 1 · Analysis"
-            elif not tool_calls:
-                think_label = f"Turn {turn + 1} · Synthesis"
-            else:
-                tools_str = ", ".join(prev_tool_names) if prev_tool_names else "tools"
-                think_label = f"Turn {turn + 1} · After {tools_str}"
-            for thought in thoughts:
-                await _emit_thinking(f"agent_t{turn + 1}", think_label, thought)
 
         msg_dict: dict = {"role": "assistant", "content": clean}
         if tool_calls:
@@ -447,14 +511,17 @@ async def _run_agent_inner(
     await save_message(conv_id, "user", summary_request)
 
     try:
-        response = await client.chat.completions.create(
-            model=MINIMAX_MODEL,
-            messages=messages,
+        async def _on_summary_think(chunk: str):
+            await _emit_thinking("agent_summary_think", "Summary · Thinking", chunk)
+
+        summary, _, _ = await _stream_llm_response(
+            messages,
+            None,
+            on_token=_emit_token,
+            on_thinking_chunk=_on_summary_think,
         )
-        summary = response.choices[0].message.content or "I reached the maximum number of steps but couldn't generate a summary."
-        for m in re.finditer(r"<think>(.*?)</think>", summary, flags=re.DOTALL):
-            await _emit_thinking("agent_summary", "Summary · Synthesis", m.group(1).strip())
-        summary = re.sub(r"<think>.*?</think>\s*", "", summary, flags=re.DOTALL).strip()
+        if not summary:
+            summary = "I reached the maximum number of steps but couldn't generate a summary."
     except Exception as e:
         logger.error(f"Summary request failed: {e}")
         summary = "I reached the maximum number of steps. Please try a more specific question."
