@@ -115,7 +115,7 @@ async def create_conversation(user: dict = Depends(get_current_user)):
 
 
 @router.get("/conversations/{conv_id}/messages")
-async def get_messages(conv_id: str, limit: int = 50, user: dict = Depends(get_current_user)):
+async def get_messages(conv_id: str, limit: int = 100, user: dict = Depends(get_current_user)):
     pool = await get_pool()
     cid = UUID(conv_id)
     async with pool.acquire() as conn:
@@ -128,9 +128,10 @@ async def get_messages(conv_id: str, limit: int = 50, user: dict = Depends(get_c
         rows = await conn.fetch(
             """SELECT role, content, tool_calls, tool_call_id, created_at
                FROM messages WHERE conversation_id = $1
-               ORDER BY id ASC LIMIT $2""",
+               ORDER BY id DESC LIMIT $2""",
             cid, limit,
         )
+        rows = list(reversed(rows))
     messages = [
         {
             "role": r["role"],
