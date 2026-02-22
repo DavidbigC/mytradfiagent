@@ -51,11 +51,12 @@ interface Props {
   onConversationCreated?: () => void;
   pendingDebate?: string | null;
   onDebateStarted?: () => void;
+  conversationMode?: string;
 }
 
-export default function ChatView({ conversationId, onConversationCreated, pendingDebate, onDebateStarted }: Props) {
+export default function ChatView({ conversationId, onConversationCreated, pendingDebate, onDebateStarted, conversationMode = "normal" }: Props) {
   const { token, logout } = useAuth();
-  const { t } = useT();
+  const { t, lang } = useT();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -69,6 +70,8 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
   const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
+  const [showModePicker, setShowModePicker] = useState(false);
+  const pendingMsgRef = useRef<string>("");
 
   // Auto-resize textarea to fit content
   const autoResize = useCallback(() => {
@@ -207,6 +210,15 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
     const msg = overrideMsg || input.trim();
     if (!msg || !token || sending) return;
 
+    // In debate conversations with existing messages, ask user which mode to use
+    if (!mode && conversationMode === "debate" && messages.length > 0) {
+      pendingMsgRef.current = msg;
+      setInput("");
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      setShowModePicker(true);
+      return;
+    }
+
     setInput("");
     // Reset textarea height after clearing
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -277,6 +289,12 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
         setSending(false);
       },
     }, mode);
+  }
+
+  function confirmModePicker(chosenMode?: string) {
+    setShowModePicker(false);
+    handleSend(chosenMode, pendingMsgRef.current);
+    pendingMsgRef.current = "";
   }
 
   function handleStop() {
@@ -441,6 +459,26 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
           </button>
         )}
       </div>
+        {showModePicker && (
+          <div className="mode-picker-overlay">
+            <div className="mode-picker">
+              <p className="mode-picker-prompt">
+                {lang === "zh" ? "选择分析模式" : "Choose analysis mode"}
+              </p>
+              <div className="mode-picker-buttons">
+                <button className="mode-picker-btn debate" onClick={() => confirmModePicker("debate")}>
+                  ⚖ {lang === "zh" ? "假设辩论" : "Debate"}
+                </button>
+                <button className="mode-picker-btn normal" onClick={() => confirmModePicker(undefined)}>
+                  🔍 {lang === "zh" ? "普通分析" : "Normal Analysis"}
+                </button>
+              </div>
+              <button className="mode-picker-cancel" onClick={() => { setShowModePicker(false); setInput(pendingMsgRef.current); pendingMsgRef.current = ""; }}>
+                {lang === "zh" ? "取消" : "Cancel"}
+              </button>
+            </div>
+          </div>
+        )}
     </div>
   );
 }
