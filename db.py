@@ -49,6 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_platform_accounts_lookup ON platform_accounts(pla
 -- Column for storing summarized conversation history (added 2026-02-18)
 ALTER TABLE IF EXISTS conversations ADD COLUMN IF NOT EXISTS summary TEXT;
 ALTER TABLE IF EXISTS conversations ADD COLUMN IF NOT EXISTS summary_up_to INTEGER DEFAULT 0;
+ALTER TABLE IF EXISTS conversations ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'normal';
 
 CREATE TABLE IF NOT EXISTS web_accounts (
     id              SERIAL PRIMARY KEY,
