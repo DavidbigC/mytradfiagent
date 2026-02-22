@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Daily incremental update: fetch new hourly bars since last ingestion."""
+"""Daily incremental update: fetch new 5-min bars since last ingestion.
+
+Cron (weekdays at 16:30 CST = 08:30 UTC):
+  30 8 * * 1-5 cd /path/to/myaiagent && .venv/bin/python data/update_ohlcv.py >> /var/log/ohlcv_update.log 2>&1
+"""
 import os
 import time
 import psycopg2
@@ -8,9 +12,6 @@ from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Cron entry (run weekdays at 16:30 CST = 08:30 UTC):
-# 30 8 * * 1-5 cd /mytradfiagent && .venv/bin/python data/update_ohlcv.py >> /var/log/ohlcv_update.log 2>&1
 
 
 def get_marketdata_conn():
@@ -23,7 +24,7 @@ def get_marketdata_conn():
     return psycopg2.connect(
         host=p.hostname or "localhost",
         port=p.port or 5432,
-        user=p.username or "postgres",
+        user=p.username or os.getenv("USER", "postgres"),
         password=p.password or "",
         dbname=dbname,
     )
@@ -33,8 +34,7 @@ lg = bs.login()
 conn = get_marketdata_conn()
 cur = conn.cursor()
 
-# Find last ingested date (global max — simpler than per-stock, good enough for daily updates)
-cur.execute("SELECT MAX(ts) FROM ohlcv_1h")
+cur.execute("SELECT MAX(ts) FROM ohlcv_5m")
 last_ts = cur.fetchone()[0]
 start_date = (last_ts.date() if last_ts else date(2020, 1, 1)).isoformat()
 end_date = date.today().isoformat()
@@ -48,7 +48,7 @@ if start_date >= end_date:
 
 print(f"Updating from {start_date} to {end_date}")
 
-# Get active stock list — fields: code, code_name, ipoDate, outDate, type, status
+# fields: code, code_name, ipoDate, outDate, type, status
 rs = bs.query_stock_basic()
 stocks = []
 while rs.error_code == "0" and rs.next():
@@ -57,7 +57,7 @@ while rs.error_code == "0" and rs.next():
         stocks.append(r[0])
 
 INSERT_SQL = """
-    INSERT INTO ohlcv_1h (ts, code, exchange, open, high, low, close, volume, amount)
+    INSERT INTO ohlcv_5m (ts, code, exchange, open, high, low, close, volume, amount)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT DO NOTHING
 """
@@ -72,19 +72,18 @@ for bs_code in stocks:
             fields="date,time,open,high,low,close,volume,amount",
             start_date=start_date,
             end_date=end_date,
-            frequency="60",
+            frequency="5",
             adjustflag="3",
         )
         batch = []
-        while rs2.error_code == "0" and rs2.next():
+        while rs2.error_code == '0' and rs2.next():
             r = rs2.get_row_data()
             date_s, time_s, o, h, l, c, vol, amt = r
             if not o or o == "":
                 continue
-            h, m, s = time_s[8:10], time_s[10:12], time_s[12:14]
-            ts = f"{date_s} {h}:{m}:{s}+08:00"
+            h2, m, s = time_s[8:10], time_s[10:12], time_s[12:14]
             batch.append((
-                ts, code, exchange,
+                f"{date_s} {h2}:{m}:{s}+08:00", code, exchange,
                 float(o), float(h), float(l), float(c),
                 int(float(vol)),
                 float(amt) if amt else None,
