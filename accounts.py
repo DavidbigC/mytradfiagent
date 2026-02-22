@@ -158,7 +158,7 @@ def _repair_tool_call_sequence(messages: list[dict]) -> list[dict]:
     return result
 
 
-async def load_recent_messages(conversation_id: UUID, limit: int = 20) -> list[dict]:
+async def load_recent_messages(conversation_id: UUID, limit: int = 60) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
