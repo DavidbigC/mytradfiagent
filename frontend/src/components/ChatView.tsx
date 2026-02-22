@@ -90,7 +90,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
         const convFiles = data.files || [];
         // Filter to user/assistant only for display
         const display: Message[] = msgs
-          .filter((m: any) => m.role === "user" || m.role === "assistant")
+          .filter((m: any) => (m.role === "user" || m.role === "assistant") && m.content?.trim())
           .map((m: any) => {
             if (m.role === "assistant") {
               const { cleaned, refs } = parseReferences(m.content);
