@@ -1,5 +1,27 @@
 # Changes
 
+## 2026-02-22 — Codebase cleanup + server deployment doc
+
+**What:** Removed obsolete files and dead code; rewrote `switchingvps.md` into a comprehensive server deployment guide.
+
+**Files deleted:**
+- `.running` — temp file containing stale secrets
+- `1` — empty stray file
+- `todo.md` — empty
+- `test_groq.py` — test artifact, not part of app
+- `generate_guide_pdf.py` — one-off script with hardcoded paths
+- `archive/bot.py` — old Telegram bot, replaced by web UI
+
+**Code removed:**
+- `tools/output.py` — `generate_references_image()` (only used by archived bot) + unused `textwrap` import
+- `accounts.py` — `get_or_create_user()` (only used by archived bot)
+- `config.py` — `GROK_MODEL_REASONING` (defined but never used anywhere)
+
+**Docs:**
+- `switchingvps.md` — rewritten into full deployment guide covering fresh setup, systemd, nginx/SSL, cron jobs, firewall, and server migration
+
+---
+
 ## 2026-02-22 — Add fetch_ohlcv tool for 5-min OHLCV / technical analysis
 
 **What:** Created a new tool that queries the local `ohlcv_5m` table in the marketdata DB, returning candlestick bars with pre-computed MA5/MA20/MA60 and chart-ready series for use with `generate_chart`.

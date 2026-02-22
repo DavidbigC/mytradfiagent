@@ -1,7 +1,6 @@
 import os
 import re
 import uuid
-import textwrap
 import urllib.request
 import matplotlib
 matplotlib.use("Agg")
@@ -555,61 +554,3 @@ def parse_references(text: str) -> tuple[str, list[dict]]:
     cleaned = text[:match.start()].rstrip() + text[match.end():]
     cleaned = cleaned.rstrip()
     return cleaned, refs
-
-
-def generate_references_image(refs: list[dict]) -> str | None:
-    """Render a list of references into a clean PNG image. Returns filepath or None."""
-    if not refs:
-        return None
-
-    # Build text lines with wrapping
-    lines = []
-    max_chars = 90  # wrap URLs at this width
-    for r in refs:
-        label = f"[{r['num']}]"
-        url = r["url"]
-        wrapped_url = textwrap.fill(url, width=max_chars, subsequent_indent="     ")
-        lines.append((label, wrapped_url))
-
-    # Calculate figure height: each ref = label line + url line(s) + spacing
-    line_count = sum(2 + wrapped.count("\n") for _, wrapped in lines)
-    fig_height = max(1.5, 0.32 * line_count + 1.0)
-    fig_width = 10
-
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
-
-    # Background
-    fig.patch.set_facecolor("#1a1a2e")
-    ax.set_facecolor("#1a1a2e")
-
-    # Title
-    y = 0.95
-    ax.text(0.03, y, "References", color="#e0e0e0", fontsize=13,
-            fontweight="bold", va="top", fontfamily="sans-serif")
-    y -= 0.08
-    ax.axhline(y=y, xmin=0.02, xmax=0.98, color="#3a3a5c", linewidth=0.8)
-    y -= 0.04
-
-    step = 1.0 / (line_count + 4)  # dynamic spacing
-
-    for label, wrapped_url in lines:
-        if y < 0.02:
-            break
-        ax.text(0.03, y, label, color="#82b1ff", fontsize=9.5,
-                va="top", fontfamily="sans-serif", fontweight="bold")
-        y -= step
-        for url_line in wrapped_url.split("\n"):
-            ax.text(0.05, y, url_line, color="#8a8a9a", fontsize=8,
-                    va="top", fontfamily="sans-serif")
-            y -= step
-
-    plt.tight_layout(pad=0.3)
-    filename = f"refs_{uuid.uuid4().hex[:8]}.png"
-    filepath = os.path.join(_get_output_dir(), filename)
-    fig.savefig(filepath, dpi=150, bbox_inches="tight",
-                facecolor=fig.get_facecolor(), edgecolor="none")
-    plt.close(fig)
-    return filepath

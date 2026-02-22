@@ -43,33 +43,6 @@ def get_user_lock(user_id: UUID) -> asyncio.Lock:
     return lock
 
 
-async def get_or_create_user(platform: str, platform_uid: str) -> UUID:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        # Try to find existing platform account
-        row = await conn.fetchrow(
-            "SELECT user_id FROM platform_accounts WHERE platform = $1 AND platform_uid = $2",
-            platform, platform_uid,
-        )
-        if row:
-            await conn.execute(
-                "UPDATE users SET last_active_at = now() WHERE id = $1",
-                row["user_id"],
-            )
-            return row["user_id"]
-
-        # Create new user + platform account
-        user_id = await conn.fetchval(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            platform_uid,
-        )
-        await conn.execute(
-            "INSERT INTO platform_accounts (user_id, platform, platform_uid) VALUES ($1, $2, $3)",
-            user_id, platform, platform_uid,
-        )
-        logger.info(f"Created user {user_id} for {platform}:{platform_uid}")
-        return user_id
-
 
 async def get_active_conversation(user_id: UUID) -> UUID:
     pool = await get_pool()

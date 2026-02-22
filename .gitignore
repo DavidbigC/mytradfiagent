@@ -12,3 +12,4 @@ eastmoneyforum
 *.pdf
 /tests
 /docs/plans
+migrate_db.sh
