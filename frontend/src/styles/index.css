@@ -789,6 +789,7 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
 }
 
 .messages-container {
@@ -1575,4 +1576,111 @@ body,
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ── Conversation Mode Badge (sidebar) ── */
+.conv-mode-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(139, 105, 20, 0.18);
+  color: var(--accent);
+  margin-right: 5px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+/* ── Mode Indicator Strip (chat header) ── */
+.mode-indicator {
+  padding: 5px 16px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mode-indicator.debate {
+  background: rgba(139, 105, 20, 0.07);
+  color: var(--accent);
+}
+
+/* ── Mode Picker (ChatView inline prompt) ── */
+.mode-picker-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 80px;
+  z-index: 20;
+}
+
+.mode-picker {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 22px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.mode-picker-prompt {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.mode-picker-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.mode-picker-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.mode-picker-btn.debate {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mode-picker-btn.debate:hover {
+  background: rgba(139, 105, 20, 0.1);
+}
+
+.mode-picker-btn.normal:hover {
+  background: var(--bg-tertiary);
+}
+
+.mode-picker-cancel {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-align: center;
+  padding: 2px 0;
+}
+
+.mode-picker-cancel:hover {
+  color: var(--text-primary);
 }
