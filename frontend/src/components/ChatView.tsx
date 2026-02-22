@@ -43,6 +43,7 @@ interface Message {
   files?: string[];
   references?: Ref[];
   thinking?: ThinkingData[];
+  elapsedSeconds?: number;
 }
 
 interface Props {
@@ -61,6 +62,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
   const [sending, setSending] = useState(false);
   const [thinkingBlocks, setThinkingBlocks] = useState<ThinkingData[]>([]);
   const thinkingBlocksRef = useRef<ThinkingData[]>([]);
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -149,11 +151,13 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
             return next;
           });
         },
+        onToken: (tok) => setStreamingContent((prev) => (prev ?? "") + tok),
         onDone: (data) => {
           const attachedThinking = thinkingBlocksRef.current.length > 0 ? thinkingBlocksRef.current : undefined;
+          setStreamingContent(null);
           setMessages((prev) => [
             ...prev,
-            { role: "assistant", content: data.text, files: data.files, references: data.references, thinking: attachedThinking },
+            { role: "assistant", content: data.text, files: data.files, references: data.references, thinking: attachedThinking, elapsedSeconds: data.elapsed_seconds },
           ]);
           setThinkingBlocks([]);
           thinkingBlocksRef.current = [];
@@ -164,6 +168,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
         onError: (error) => {
           if (error === "UNAUTHORIZED") { logout(); return; }
           if (error === "NO_ACTIVE_RUN") { setStatus(null); setSending(false); return; }
+          setStreamingContent(null);
           setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${error}` }]);
           setThinkingBlocks([]);
           thinkingBlocksRef.current = [];
@@ -233,10 +238,12 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
           return next;
         });
       },
+      onToken: (tok) => setStreamingContent((prev) => (prev ?? "") + tok),
       onDone: (data) => {
         const attachedThinking = thinkingBlocksRef.current.length > 0
           ? thinkingBlocksRef.current
           : undefined;
+        setStreamingContent(null);
         setMessages((prev) => [
           ...prev,
           {
@@ -245,6 +252,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
             files: data.files,
             references: data.references,
             thinking: attachedThinking,
+            elapsedSeconds: data.elapsed_seconds,
           },
         ]);
         setThinkingBlocks([]);
@@ -258,6 +266,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
           logout();
           return;
         }
+        setStreamingContent(null);
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: `Error: ${error}` },
@@ -286,6 +295,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
       }
       return prev;
     });
+    setStreamingContent(null);
     setThinkingBlocks([]);
     thinkingBlocksRef.current = [];
     setStatus(null);
@@ -387,6 +397,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
             files={m.files}
             references={m.references}
             thinking={m.thinking}
+            elapsedSeconds={m.elapsedSeconds}
           />
         ))}
         {thinkingBlocks.length > 0 && (
@@ -395,6 +406,9 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
               <ThinkingBlock key={t.source} label={t.label} content={t.content} streaming={true} />
             ))}
           </div>
+        )}
+        {streamingContent !== null && (
+          <MessageBubble role="assistant" content={streamingContent} />
         )}
         {status && <StatusIndicator text={status} />}
         <div ref={bottomRef} />

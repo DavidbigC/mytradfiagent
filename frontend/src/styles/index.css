@@ -987,6 +987,15 @@ body,
   border-color: var(--accent);
 }
 
+/* ── Response elapsed time ── */
+.message-elapsed {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  opacity: 0.6;
+  text-align: right;
+}
+
 /* ── Reference Card ── */
 .reference-card {
   margin-top: 14px;

@@ -19,7 +19,7 @@ import re
 from datetime import datetime
 from openai import AsyncOpenAI
 from config import (
-    MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL,
+    get_minimax_config,
     QWEN_API_KEY, QWEN_BASE_URL, QWEN_MODEL,
 )
 
@@ -41,7 +41,8 @@ PRIOR_REPORT_MAX_AGE_DAYS = 5
 
 logger = logging.getLogger(__name__)
 
-minimax_client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
+_mm_api_key, _mm_base_url, MINIMAX_MODEL = get_minimax_config()
+minimax_client = AsyncOpenAI(api_key=_mm_api_key, base_url=_mm_base_url)
 qwen_client = AsyncOpenAI(api_key=QWEN_API_KEY, base_url=QWEN_BASE_URL)
 
 ANALYZE_TRADE_SCHEMA = {

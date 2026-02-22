@@ -143,9 +143,10 @@ export async function fetchUserFiles(token: string, fileType?: string) {
 
 export interface SSECallbacks {
   onStatus: (text: string) => void;
-  onDone: (data: { text: string; files: string[]; references: Array<{ num: string; url: string }> }) => void;
+  onDone: (data: { text: string; files: string[]; references: Array<{ num: string; url: string }>; elapsed_seconds?: number }) => void;
   onError: (error: string) => void;
   onThinking?: (data: { source: string; label: string; content: string }) => void;
+  onToken?: (tok: string) => void;
 }
 
 async function _readSSEStream(res: Response, callbacks: SSECallbacks) {
@@ -171,6 +172,8 @@ async function _readSSEStream(res: Response, callbacks: SSECallbacks) {
           if (callbacks.onThinking) {
             try { callbacks.onThinking(JSON.parse(data)); } catch { /* ignore malformed */ }
           }
+        } else if (currentEvent === "token") {
+          if (callbacks.onToken) callbacks.onToken(data);
         } else if (currentEvent === "status") {
           callbacks.onStatus(data);
         } else if (currentEvent === "done") {

@@ -9,7 +9,7 @@ import time
 from typing import Callable
 from uuid import UUID
 from openai import AsyncOpenAI
-from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, get_system_prompt, get_planning_prompt
+from config import get_minimax_config, get_system_prompt, get_planning_prompt
 from tools import TOOL_SCHEMAS, execute_tool
 from accounts import (
     get_active_conversation, get_user_lock,
@@ -42,7 +42,8 @@ MAX_TOOL_RESULT_CHARS = 40000
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
+_mm_api_key, _mm_base_url, _mm_model = get_minimax_config()
+client = AsyncOpenAI(api_key=_mm_api_key, base_url=_mm_base_url)
 
 MAX_TURNS = 30
 
@@ -101,7 +102,7 @@ async def _maybe_summarize(conv_id: UUID, messages: list[dict]) -> list[dict]:
 
     try:
         response = await client.chat.completions.create(
-            model=MINIMAX_MODEL,
+            model=_mm_model,
             messages=[{"role": "user", "content": _SUMMARIZE_PROMPT.format(conversation=conv_text)}],
             max_tokens=2500,
         )
@@ -126,9 +127,17 @@ async def _maybe_summarize(conv_id: UUID, messages: list[dict]) -> list[dict]:
     return [summary_msg] + messages
 
 
+class _DateEncoder(json.JSONEncoder):
+    def default(self, obj):
+        import datetime
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 def _truncate_result(result: dict | list | str) -> str:
     """Serialize and truncate tool results to save tokens."""
-    text = json.dumps(result, ensure_ascii=False) if isinstance(result, (dict, list)) else str(result)
+    text = json.dumps(result, ensure_ascii=False, cls=_DateEncoder) if isinstance(result, (dict, list)) else str(result)
     if len(text) <= MAX_TOOL_RESULT_CHARS:
         return text
     # For data-heavy results, keep start and end for context
@@ -192,11 +201,15 @@ async def _stream_llm_response(
     think_buf = ""
     think_emitted = 0  # chars of think_buf already sent via on_thinking_chunk
 
+    create_kwargs: dict = {
+        "model": _mm_model,
+        "messages": messages,
+        "stream": True,
+    }
+    if tools:
+        create_kwargs["tools"] = tools
     stream = await client.chat.completions.create(
-        model=MINIMAX_MODEL,
-        messages=messages,
-        tools=tools or None,
-        stream=True,
+        **create_kwargs,
     )
 
     async for chunk in stream:

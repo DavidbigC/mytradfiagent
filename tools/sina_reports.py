@@ -601,8 +601,8 @@ async def _get_financial_context(code: str) -> str:
     Returns a compact text summary of the trend data for use in question generation.
     """
     try:
-        from db import get_pool
-        pool = await get_pool()
+        from db import get_marketdata_pool
+        pool = await get_marketdata_pool()
         rows = await pool.fetch(
             """
             SELECT stat_date, pub_date,

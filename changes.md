@@ -1,5 +1,67 @@
 # Changes
 
+## 2026-02-22 — Fix token-by-token streaming in frontend
+
+**What:** The backend was already emitting `token` SSE events per token, but the frontend SSE reader had no handler for them so they were silently dropped. Wired up proper streaming so text appears incrementally.
+
+**Files:**
+- `frontend/src/api.ts` — add `onToken?` to `SSECallbacks`; handle `token` SSE events in `_readSSEStream`
+- `frontend/src/components/ChatView.tsx` — add `streamingContent` state; wire `onToken` in both `handleSend` and `reconnect`; render live streaming bubble; clear on `onDone`/`onError`/`handleStop`
+
+---
+
+## 2026-02-22 — Show response elapsed time in chat
+
+**What:** Timed each agent/debate run and displayed elapsed seconds as small muted text at the bottom of every assistant message.
+
+**Files:**
+- `api_chat.py` — record `t0` before run, compute elapsed, log it, include `elapsed_seconds` in `done` SSE payload
+- `frontend/src/api.ts` — add `elapsed_seconds?: number` to `onDone` callback type
+- `frontend/src/components/ChatView.tsx` — thread `elapsedSeconds` through `Message` interface and `MessageBubble` props
+- `frontend/src/components/MessageBubble.tsx` — render `<div class="message-elapsed">` when present
+- `frontend/src/styles/index.css` — add `.message-elapsed` style (small, muted, right-aligned)
+
+---
+
+## 2026-02-22 — Add Fireworks AI as switchable MiniMax provider
+
+**What:** Added support for running MiniMax via Fireworks AI (drop-in OpenAI-compatible endpoint) with a single env-var toggle to switch between providers.
+
+**Files:**
+- `config.py` — added `FIREWORKS_API_KEY`, `FIREWORKS_BASE_URL`, `FIREWORKS_MINIMAX_MODEL`, `MINIMAX_PROVIDER` env vars and `get_minimax_config()` helper
+- `agent.py` — uses `get_minimax_config()` instead of raw constants
+- `tools/subagent.py` — uses `get_minimax_config()` instead of raw constants
+- `tools/trade_analyzer.py` — uses `get_minimax_config()` instead of raw constants
+
+**Details:**
+- Default provider is `fireworks`; set `MINIMAX_PROVIDER=minimax` to revert to the official API
+- Default Fireworks model: `accounts/fireworks/models/minimax-m2p1` (override via `FIREWORKS_MINIMAX_MODEL`)
+- Requires `FIREWORKS_API_KEY` in `.env` when using Fireworks provider
+
+## 2026-02-22 — Add fetch_baostock_financials tool; fix marketdata DB connection
+
+**What:** Created a new agent-callable tool to query the local BaoStock `financials` table in the marketdata DB. Fixed a bug where `_get_financial_context` was querying the wrong DB (main myaiagent DB instead of marketdata DB), causing silent failures.
+
+**Files:**
+- `config.py` — added `MARKETDATA_URL` constant; added `fetch_baostock_financials` row to planning prompt tool table; added routing notes for DuPont/cash quality analysis; added citation URL
+- `db.py` — added `MARKETDATA_URL` import, `marketdata_pool` global, `get_marketdata_pool()` function
+- `tools/financials_db.py` — created: `fetch_baostock_financials` tool with full column docs, default column set, validation; queries `financials` table via `get_marketdata_pool()`
+- `tools/__init__.py` — registered `fetch_baostock_financials` in TOOL_SCHEMAS and TOOL_MAP
+- `tools/sina_reports.py` — fixed `_get_financial_context` to use `get_marketdata_pool()` instead of `get_pool()` (main DB)
+
+**Details:**
+- `financials` table lives in the `marketdata` DB (BaoStock source), not the main `myaiagent` DB; the old code was querying the wrong pool and silently returning empty data
+- The new tool exposes 30+ columns across 6 categories: profitability, operational efficiency, growth, solvency, cash flow, DuPont decomposition
+- Column descriptions from `data/financials_columns.md` are embedded in both the tool schema description and the response `columns_doc` field so the agent always knows what each metric means
+- `get_marketdata_pool()` lazily creates a pool on first use (no startup cost if unused)
+
+## 2026-02-22 — Remove report file cache (always fetch live)
+
+**What:** Removed the `output/reports/` disk cache and `report_cache` DB lookups from `fetch_company_report`. Reports are now always fetched fresh from Sina Finance on every call.
+
+**Files:**
+- `tools/sina_reports.py` — removed `_REPORTS_BASE`, `_get_cache_path`, `_check_report_cache`, `_save_report_cache`; removed `from pathlib import Path`; stripped cache-check fast-path and file-write from `fetch_company_report`; removed `cache_path` from return dict
+
 ## 2026-02-22 — Real-time think-block streaming for all agent LLM calls
 
 **What:** Extended streaming to cover `<think>` content and all non-main-loop LLM calls so users see something immediately even while the model is thinking.

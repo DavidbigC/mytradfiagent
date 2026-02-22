@@ -4,10 +4,32 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Official MiniMax (minimaxi.chat)
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.chat/v1")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M1-80k")
+
+# MiniMax via Fireworks AI (drop-in OpenAI-compatible)
+FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
+FIREWORKS_BASE_URL = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
+FIREWORKS_MINIMAX_MODEL = os.getenv("FIREWORKS_MINIMAX_MODEL", "accounts/fireworks/models/minimax-m2p1")
+
+# Set MINIMAX_PROVIDER=minimax to use the official API; default is fireworks
+MINIMAX_PROVIDER = os.getenv("MINIMAX_PROVIDER", "fireworks")
+
+
+def get_minimax_config() -> tuple[str | None, str, str]:
+    """Return (api_key, base_url, model) for the active MiniMax provider.
+
+    Switch providers by setting MINIMAX_PROVIDER=minimax (official) or
+    MINIMAX_PROVIDER=fireworks (default).  All other env vars can still be
+    overridden individually.
+    """
+    if MINIMAX_PROVIDER == "minimax":
+        return (MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL)
+    return (FIREWORKS_API_KEY, FIREWORKS_BASE_URL, FIREWORKS_MINIMAX_MODEL)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/myaiagent")
+MARKETDATA_URL = os.getenv("MARKETDATA_URL", "postgresql://localhost/marketdata")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "davidc")
@@ -64,6 +86,7 @@ Tool → URL mapping:
   - fetch_northbound_flow → https://data.eastmoney.com/hsgt/
   - fetch_capital_flow_ranking → https://data.eastmoney.com/zjlx/
   - fetch_stock_financials → https://data.eastmoney.com/bbsj/
+  - fetch_baostock_financials → http://baostock.com/
   - fetch_top_shareholders → https://data.eastmoney.com/gdhs/
   - fetch_dragon_tiger → https://data.eastmoney.com/stock/lhb.html
   - fetch_dividend_history → https://data.eastmoney.com/yjfp/
@@ -103,7 +126,8 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
 | fetch_stock_capital_flow(code, days) | 单股120天资金流向（大单/超大单/散户） | 每日 |
 | fetch_multiple_cn_stocks / fetch_cn_stock_data | 价格、PE、PB、市值、涨跌幅 | 实时 |
 | screen_cn_stocks(sort_by, filters) | 筛选/排名全部A股（~5200只） | 实时 |
-| fetch_stock_financials(code, statement) | 季度财报（资产负债/利润/现金流），10年+ | 季度 |
+| fetch_stock_financials(code, statement) | 季度财报（资产负债/利润/现金流），EastMoney来源，10年+ | 季度 |
+| fetch_baostock_financials(code, periods) | 本地BaoStock数据库：ROE、净利率、毛利率、DuPont拆解、CFO/净利润（现金质量）、存货周转天数等30+指标 | 季度 |
 | fetch_top_shareholders(code, periods) | 十大流通股东及持股变动 | 季度披露（滞后1–2月） |
 | fetch_company_report(code, type) | 年报/季报原文 + PDF（Sina Finance） | 季度 |
 | fetch_sina_profit_statement(code, year) | 详细利润表含利息收入/费用明细 | 年度 |
@@ -129,7 +153,8 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
   - 若不知股票代码，先用 fetch_cn_stock_data 或 web_search 查询。
 - **北向资金**：每日数据，用 fetch_northbound_flow，切勿用 web_search。
 - **A股行情/排名**：用 fetch_multiple_cn_stocks 或 screen_cn_stocks，切勿用 web_search。
-- **深度单股分析**：并行调用 fetch_stock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history，同时 dispatch_subagents 抓取股吧情绪。
+- **深度单股分析**：并行调用 fetch_stock_financials + fetch_baostock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history，同时 dispatch_subagents 抓取股吧情绪。
+- **深度财务比率分析**（ROE分解/现金质量/运营效率）：优先使用 fetch_baostock_financials，它包含 DuPont拆解（dupont_roe/asset_turn/ebit_togr）、CFO/净利润现金质量（cfo_to_np）、存货周转天数（inv_turn_days）等 EastMoney API 没有的指标。
 - **买卖建议**：用 analyze_trade_opportunity，切勿手动拼凑。
 - **任何资金流向数据**：切勿使用 web_search，始终使用对应的专用工具。
 

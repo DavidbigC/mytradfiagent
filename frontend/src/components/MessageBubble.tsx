@@ -21,9 +21,10 @@ interface Props {
   files?: string[];
   references?: Ref[];
   thinking?: ThinkingData[];
+  elapsedSeconds?: number;
 }
 
-export default function MessageBubble({ role, content, files, references, thinking }: Props) {
+export default function MessageBubble({ role, content, files, references, thinking, elapsedSeconds }: Props) {
   const { token } = useAuth();
   if (role === "tool") return null;
 
@@ -82,6 +83,10 @@ export default function MessageBubble({ role, content, files, references, thinki
         )}
 
         {references && references.length > 0 && <ReferenceCard references={references} />}
+
+        {role === "assistant" && elapsedSeconds !== undefined && (
+          <div className="message-elapsed">{elapsedSeconds}s</div>
+        )}
       </div>
     </div>
   );

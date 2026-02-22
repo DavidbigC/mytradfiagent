@@ -329,11 +329,16 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
         run.put({"event": "token", "data": tok})
 
     async def run_in_background():
+        import time as _time
+        t0 = _time.time()
         try:
             if body.mode == "debate":
                 result = await run_debate(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
             else:
                 result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking, on_token=on_token)
+
+            elapsed = round(_time.time() - t0)
+            logger.info(f"Agent completed in {elapsed}s for user {user_id}")
 
             text = result.get("text", "")
             files = result.get("files", [])
@@ -362,7 +367,7 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             file_urls = [f"/api/chat/files/{os.path.relpath(f, PROJECT_ROOT)}" for f in files]
             run.put({
                 "event": "done",
-                "data": json.dumps({"text": cleaned_text, "files": file_urls, "references": refs}, ensure_ascii=False),
+                "data": json.dumps({"text": cleaned_text, "files": file_urls, "references": refs, "elapsed_seconds": elapsed}, ensure_ascii=False),
             })
         except Exception as e:
             logger.error(f"Agent error: {e}", exc_info=True)

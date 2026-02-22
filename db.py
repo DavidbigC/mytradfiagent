@@ -1,10 +1,11 @@
 import logging
 import asyncpg
-from config import DATABASE_URL
+from config import DATABASE_URL, MARKETDATA_URL
 
 logger = logging.getLogger(__name__)
 
 pool: asyncpg.Pool | None = None
+marketdata_pool: asyncpg.Pool | None = None
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
@@ -120,3 +121,21 @@ async def get_pool() -> asyncpg.Pool:
     if pool is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     return pool
+
+
+async def get_marketdata_pool() -> asyncpg.Pool:
+    """Return (creating if needed) a connection pool to the marketdata DB.
+
+    The marketdata DB holds the `financials` (BaoStock quarterly data) and
+    `ohlcv_5m` tables. It is separate from the main myaiagent DB.
+    """
+    global marketdata_pool
+    if marketdata_pool is None:
+        logger.info("Connecting to marketdata database...")
+        # Always force database='marketdata' — the MARKETDATA_URL may omit the
+        # database path, which causes asyncpg to fall back to the OS username.
+        marketdata_pool = await asyncpg.create_pool(
+            MARKETDATA_URL, database="marketdata", min_size=1, max_size=5
+        )
+        logger.info("Marketdata pool ready.")
+    return marketdata_pool

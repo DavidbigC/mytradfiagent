@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime
 from openai import AsyncOpenAI
-from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL
+from config import get_minimax_config
 from tools.cache import cached
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,8 @@ async def dispatch_subagents(tasks: list[dict]) -> dict:
     # Import here to avoid circular imports
     from tools import TOOL_SCHEMAS, execute_tool
 
-    client = AsyncOpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
+    _api_key, _base_url, _model = get_minimax_config()
+    client = AsyncOpenAI(api_key=_api_key, base_url=_base_url)
 
     async def run_subagent(task: dict) -> tuple[str, str]:
         task_id = task["id"]
@@ -76,7 +77,7 @@ async def dispatch_subagents(tasks: list[dict]) -> dict:
         for turn in range(SUBAGENT_MAX_TURNS):
             try:
                 response = await client.chat.completions.create(
-                    model=MINIMAX_MODEL,
+                    model=_model,
                     messages=messages,
                     tools=TOOL_SCHEMAS if TOOL_SCHEMAS else None,
                     max_tokens=3000,
@@ -127,7 +128,7 @@ async def dispatch_subagents(tasks: list[dict]) -> dict:
         messages.append({"role": "user", "content": "Summarize your findings so far."})
         try:
             response = await client.chat.completions.create(
-                model=MINIMAX_MODEL,
+                model=_model,
                 messages=messages,
             )
             return task_id, response.choices[0].message.content or "No result"
