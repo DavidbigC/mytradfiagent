@@ -326,7 +326,7 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
         })
 
     async def on_token(tok: str):
-        run.put({"event": "token", "data": tok})
+        run.put({"event": "token", "data": json.dumps(tok)})
 
     async def run_in_background():
         import time as _time

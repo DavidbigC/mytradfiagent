@@ -88,6 +88,7 @@ async def _grok_web_search(query: str) -> dict:
             model=GROK_MODEL_NOREASONING,
             input=[{"role": "user", "content": query}],
             tools=[{"type": "web_search"}],
+            max_output_tokens=800,
         )
         # Find the message output item
         content = ""
@@ -103,7 +104,9 @@ async def _grok_web_search(query: str) -> dict:
                                 sources.append({"url": ann.url, "title": ann.title or ""})
                         break
                 break
-        logger.info(f"Grok web search: {len(sources)} citations for '{query[:60]}'")
+        if len(content) > 2000:
+            content = content[:2000] + "...[truncated]"
+        logger.info(f"Grok web search: {len(sources)} citations, {len(content)} chars for '{query[:60]}'")
         return {"answer": content, "sources": sources}
     except Exception as e:
         logger.warning(f"Grok web search failed ({e}), falling back to DuckDuckGo")

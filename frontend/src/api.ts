@@ -173,7 +173,9 @@ async function _readSSEStream(res: Response, callbacks: SSECallbacks) {
             try { callbacks.onThinking(JSON.parse(data)); } catch { /* ignore malformed */ }
           }
         } else if (currentEvent === "token") {
-          if (callbacks.onToken) callbacks.onToken(data);
+          if (callbacks.onToken) {
+            try { callbacks.onToken(JSON.parse(data)); } catch { callbacks.onToken(data); }
+          }
         } else if (currentEvent === "status") {
           callbacks.onStatus(data);
         } else if (currentEvent === "done") {
