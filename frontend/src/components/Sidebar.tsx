@@ -21,10 +21,9 @@ interface Props {
   onDebate: () => void;
   open: boolean;
   onClose: () => void;
-  conversationMode?: string;
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose, conversationMode }: Props) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose }: Props) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useT();

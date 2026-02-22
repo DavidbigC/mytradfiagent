@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 import io
@@ -90,11 +90,11 @@ async def _event_stream(run: AgentRun) -> asyncio.AsyncGenerator:
 class SendBody(BaseModel):
     message: str
     conversation_id: str | None = None
-    mode: str | None = None
+    mode: Literal["normal", "debate"] | None = None
 
 
 class CreateConversationBody(BaseModel):
-    mode: str = "normal"
+    mode: Literal["normal", "debate"] = "normal"
 
 
 @router.get("/conversations")

@@ -117,7 +117,6 @@ export default function ChatLayout() {
         onDebate={() => setShowDebateModal(true)}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        conversationMode={activeMode}
       />
 
       <main className="chat-main">
