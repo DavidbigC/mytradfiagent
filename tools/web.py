@@ -88,7 +88,7 @@ async def _grok_web_search(query: str) -> dict:
             model=GROK_MODEL_NOREASONING,
             input=[{"role": "user", "content": query}],
             tools=[{"type": "web_search"}],
-            max_output_tokens=800,
+            max_output_tokens=500,
         )
         # Find the message output item
         content = ""
