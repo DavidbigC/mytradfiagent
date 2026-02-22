@@ -9,7 +9,7 @@ from typing import Optional
 from uuid import UUID
 
 import io
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -93,24 +93,33 @@ class SendBody(BaseModel):
     mode: str | None = None
 
 
+class CreateConversationBody(BaseModel):
+    mode: str = "normal"
+
+
 @router.get("/conversations")
 async def list_conversations(user: dict = Depends(get_current_user)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT id, title, updated_at FROM conversations
+            """SELECT id, title, updated_at, mode FROM conversations
                WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 50""",
             user["user_id"],
         )
     return [
-        {"id": str(r["id"]), "title": r["title"] or "New Chat", "updated_at": r["updated_at"].isoformat()}
+        {
+            "id": str(r["id"]),
+            "title": r["title"] or "New Chat",
+            "updated_at": r["updated_at"].isoformat(),
+            "mode": r["mode"] or "normal",
+        }
         for r in rows
     ]
 
 
 @router.post("/conversations")
-async def create_conversation(user: dict = Depends(get_current_user)):
-    conv_id = await new_conversation(user["user_id"])
+async def create_conversation(body: CreateConversationBody = Body(default_factory=CreateConversationBody), user: dict = Depends(get_current_user)):
+    conv_id = await new_conversation(user["user_id"], body.mode)
     return {"id": str(conv_id)}
 
 
