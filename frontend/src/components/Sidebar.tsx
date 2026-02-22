@@ -9,6 +9,7 @@ interface Conversation {
   id: string;
   title: string;
   updated_at: string;
+  mode: string;
 }
 
 interface Props {
@@ -20,9 +21,10 @@ interface Props {
   onDebate: () => void;
   open: boolean;
   onClose: () => void;
+  conversationMode?: string;
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose }: Props) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose, conversationMode }: Props) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useT();
@@ -51,7 +53,12 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
               className={`conversation-item ${c.id === activeId ? "active" : ""}`}
               onClick={() => { onSelect(c.id); onClose(); }}
             >
-              <span className="conv-title">{c.title}</span>
+              <span className="conv-title">
+                {c.mode === "debate" && (
+                  <span className="conv-mode-badge">{lang === "zh" ? "辩论" : "Debate"}</span>
+                )}
+                {c.title}
+              </span>
               <button
                 className="conv-delete"
                 onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
