@@ -57,16 +57,17 @@ async def get_active_conversation(user_id: UUID) -> UUID:
         return await _create_conversation(conn, user_id)
 
 
-async def new_conversation(user_id: UUID) -> UUID:
+async def new_conversation(user_id: UUID, mode: str = "normal") -> UUID:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        return await _create_conversation(conn, user_id)
+        return await _create_conversation(conn, user_id, mode)
 
 
-async def _create_conversation(conn, user_id: UUID) -> UUID:
+async def _create_conversation(conn, user_id: UUID, mode: str = "normal") -> UUID:
     conv_id = await conn.fetchval(
-        "INSERT INTO conversations (user_id) VALUES ($1) RETURNING id",
+        "INSERT INTO conversations (user_id, mode) VALUES ($1, $2) RETURNING id",
         user_id,
+        mode,
     )
     logger.info(f"Created conversation {conv_id} for user {user_id}")
     return conv_id
