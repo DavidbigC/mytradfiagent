@@ -1257,3 +1257,20 @@
 - Removed time.sleep(0.1) per stock; rate limiting now implicit via semaphore + process count
 - Progress bar shows: N/M complete, bar, %, elapsed, ETA, current stock + row count
 - ON CONFLICT DO NOTHING preserved for safe re-runs after interruption
+
+## 2026-02-23 — OpenBB global market data tool
+
+**What:** Added fetch_global_market_data tool wrapping the full OpenBB Platform API for on-demand access to global financial data.
+
+**Files:**
+- `tools/openbb_data.py` — created: tool implementation + comprehensive schema covering all OpenBB namespaces
+- `tools/__init__.py` — registered new tool in TOOL_SCHEMAS and TOOL_MAP
+- `requirements.txt` — added openbb
+
+**Details:**
+- Single dynamic tool: command string (e.g. "equity.price.historical") + params dict
+- OpenBB initialized once at import via lru_cache; FRED_API_KEY and FMP_API_KEY injected via direct attribute assignment on obb.user.credentials
+- Covers: equity (prices, fundamentals, filings), economy (GDP, CPI, calendar), fixed income (yield curve, treasury rates), forex, crypto, ETF, index, options, news, SEC/CFTC regulators
+- Primary providers: fmp (equity, ETF, index, forex, crypto), fred/federal_reserve (rates, fixed income), oecd (macro/GDP), sec (filings)
+- yfinance excluded (blocked on server); all providers confirmed working
+- 60s timeout, 5min cache, 150-row / 12k-char output cap
