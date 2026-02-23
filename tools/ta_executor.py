@@ -90,7 +90,23 @@ _SCRIPT_RULES = (
     "    pd.to_datetime() unless you need it for arithmetic (e.g. date diff, resample).\n"
     "  - If you must convert: use df['ts'] = pd.to_datetime(df['ts']) for arithmetic only,\n"
     "    then pass the original string column to Plotly x-axis (not the datetime column).\n"
-    "  - For Plotly x-axis always use the string ts values, never Timestamp objects."
+    "  - For Plotly x-axis always use the string ts values, never Timestamp objects.\n"
+    "VISUAL COMPLETENESS RULES:\n"
+    "  - Implement EVERY visual element the analysis requires. Never omit an overlay because\n"
+    "    it is complex — simplify the algorithm if needed but always draw the result.\n"
+    "  - Plotly trace types for common TA elements:\n"
+    "      Fractal points / signals  → go.Scatter(mode='markers', x=ts_vals, y=price_vals)\n"
+    "      Stroke / Bi lines         → go.Scatter(mode='lines', x=[ts_a,ts_b], y=[p_a,p_b])\n"
+    "        For multiple strokes loop and add one trace per stroke, or build x/y lists with\n"
+    "        None separators: x=[ts_a,ts_b,None,ts_c,ts_d,...], y=[p_a,p_b,None,p_c,p_d,...]\n"
+    "      Pivot zone / 中枢 rect    → fig.add_shape(type='rect', x0=ts_start, x1=ts_end,\n"
+    "                                    y0=low, y1=high, xref='x', yref='y',\n"
+    "                                    fillcolor='rgba(255,165,0,0.15)', line_width=1)\n"
+    "      Support / resistance line → fig.add_hline(y=price) or go.Scatter(mode='lines')\n"
+    "      Buy/sell arrows           → go.Scatter(mode='markers+text') with marker_symbol\n"
+    "  - Every trace must have a descriptive name= for the legend.\n"
+    "  - Use None separators in a single go.Scatter trace (not one trace per segment) when\n"
+    "    drawing many line segments of the same type (e.g. all 笔 in one trace)."
 )
 
 
@@ -119,6 +135,11 @@ async def _polish_script(script: str) -> str:
     This runs before the first execution attempt so M2.5 always writes the actual script."""
     prompt = (
         f"Rewrite this Python technical analysis script to be correct and production-quality.\n\n"
+        f"STEP 1 — Before rewriting, identify every visual element the script attempts to draw "
+        f"(e.g. candlesticks, fractal markers, stroke lines, pivot zones, signals, annotations). "
+        f"STEP 2 — Rewrite the script so that every element from Step 1 is implemented correctly "
+        f"and present in the output. Fix bugs but do NOT remove any trace, shape, marker, or "
+        f"annotation — if an implementation is broken, fix it; never delete it.\n\n"
         f"DRAFT SCRIPT:\n{script}\n\n"
         f"REQUIREMENTS:\n{_SCRIPT_RULES}\n\n"
         f"Return ONLY the improved Python code. No markdown fences. No explanation."
@@ -137,7 +158,8 @@ async def _rewrite_script(script: str, error: str) -> str:
     """Ask MiniMax M2.5 to fix a failing script. Validates syntax internally and retries
     the rewrite (not the subprocess) if MiniMax returns syntactically invalid code."""
     base_prompt = (
-        f"This Python technical analysis script failed. Fix it.\n\n"
+        f"This Python technical analysis script failed. Fix the error without removing any "
+        f"visual elements — if a trace or shape is broken, fix it; do not delete it.\n\n"
         f"ERROR:\n{error[:2000]}\n\n"
         f"ORIGINAL SCRIPT:\n{script}\n\n"
         f"REQUIREMENTS:\n{_SCRIPT_RULES}\n\n"

@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-02-23 — Improve chart generation completeness via better prompting
+
+**What:** The `_polish_script` rewriter was silently dropping visual elements (e.g. 笔 stroke lines, 中枢 zones) when simplifying scripts. Added visual-completeness rules and a two-step enumerate-then-rewrite instruction so all requested overlays are always preserved and implemented.
+
+**Files:**
+- `tools/ta_executor.py` — modified `_SCRIPT_RULES`, `_polish_script` prompt, `_rewrite_script` prompt
+
+**Details:**
+- `_SCRIPT_RULES`: added VISUAL COMPLETENESS RULES section with Plotly trace-type reference for common TA elements (fractal markers, stroke lines with None separators, pivot zone shapes, signals) and explicit "never omit an overlay" rule
+- `_polish_script`: added Step 1 (enumerate all visual elements) before Step 2 (rewrite), with instruction to fix broken elements rather than delete them
+- `_rewrite_script`: added same preservation instruction — fix the error, do not remove traces/shapes
+
 ## 2026-02-23 — Fix messages going to wrong conversation on mobile
 
 **What:** When `POST /api/chat/send` received no `conversation_id`, the backend fell through to `get_active_conversation` which reused the most recent existing conversation. On mobile, tab discards after backgrounding cause the frontend to reload with `activeId = null`, triggering this path. Now a new conversation is created explicitly instead.
