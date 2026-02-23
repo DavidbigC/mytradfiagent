@@ -1305,3 +1305,55 @@
 - Primary providers: fmp (equity, ETF, index, forex, crypto), fred/federal_reserve (rates, fixed income), oecd (macro/GDP), sec (filings)
 - yfinance excluded (blocked on server); all providers confirmed working
 - 60s timeout, 5min cache, 150-row / 12k-char output cap
+
+## 2026-02-23 — Update planning and system prompts for TA strategy tools
+
+**What:** Added TA strategy tool entries to the planning prompt tool table and replaced the old K-line guidance bullet with a step-by-step TA workflow; added citation mappings for the new tools in the system prompt.
+
+**Files:**
+- `config.py` — modified (planning prompt table, TA guidance section, system prompt citation mapping)
+
+**Details:**
+- Tool table: added rows for `lookup_ta_strategy`, `save_ta_strategy`, `update_ta_strategy`, `run_ta_script` after `fetch_ohlcv`.
+- TA guidance: replaced single bullet with a 4-step workflow covering knowledge-base lookup, optional web_search + save, OHLCV fetch, and pandas-ta script execution via `run_ta_script`.
+- Citation mapping: added `run_ta_script → https://pypi.org/project/pandas-ta/` and a no-citation note for the three knowledge-base tools.
+
+## 2026-02-23 — TA Strategy System
+
+**What:** Added TA strategy knowledge base and sandboxed code-execution tool for pandas-ta + Plotly chart generation.
+
+**Files:**
+- `db.py` — modified: added `ta_strategies` table + FTS index to SCHEMA_SQL
+- `tools/ta_strategies.py` — created: lookup_ta_strategy, save_ta_strategy, update_ta_strategy tools
+- `tools/ta_executor.py` — created: run_ta_script tool (subprocess sandbox, 3-attempt retry via MiniMax)
+- `tools/__init__.py` — modified: registered 4 new tools in TOOL_SCHEMAS and TOOL_MAP
+- `config.py` — modified: updated planning prompt with TA workflow guidance; updated system prompt citation mapping
+- `frontend/src/components/MessageBubble.tsx` — modified: HTML chart opens in new tab
+- `frontend/src/components/ReportsPanel.tsx` — modified: html filter tab + open-in-tab handler
+- `structure.md` — modified: documented new tools and ta_strategies DB table
+- `requirements.txt` — modified: added pandas-ta, plotly
+- `tests/test_ta_strategies.py` — created: 5 unit tests (mocked DB)
+- `tests/test_ta_executor.py` — created: 5 unit tests (mocked subprocess + MiniMax)
+
+**Details:**
+- Strategies stored in myaiagent Postgres (not marketdata DB)
+- Import sandbox uses frame inspection (sys._getframe) to only restrict user script imports, not library internals
+- Subprocess timeout: 30 seconds; asyncio.to_thread prevents blocking uvicorn event loop
+- On failure: MiniMax rewrites script, up to 3 total attempts
+- run_ta_script returns {"file": path} — picked up by agent.py line 492 automatically
+- Strategy alterations via update_ta_strategy (patches fields, never deletes)
+- Plotly .html charts open in new browser tab from both chat and ReportsPanel
+
+## 2026-02-23 — Add HTML Plotly chart support to frontend (Task 3b)
+
+**What:** Updated MessageBubble and ReportsPanel to render interactive Plotly HTML charts, and added the corresponding i18n key.
+
+**Files:**
+- `frontend/src/components/MessageBubble.tsx` — modified: added `.html` case that renders a link opening the chart in a new tab
+- `frontend/src/components/ReportsPanel.tsx` — modified: renamed `handleDownload` to `handleOpen`, added html case that opens chart in new tab, added "html" filter tab, updated icon to show 📊 for html files
+- `frontend/src/i18n.tsx` — modified: added `"reports.charts_interactive"` translation key (en: "Charts", zh: "互动图表")
+
+**Details:**
+- HTML charts open via `window.open` with the token as a query param (no Authorization header needed since the file is served directly).
+- The new filter tab appears after "Markdown" in ReportsPanel.
+- TypeScript check (`tsc --noEmit`) passed with zero errors.

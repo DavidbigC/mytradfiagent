@@ -67,6 +67,8 @@ web_accounts            id, user_id, username, password_hash, created_at
 conversations           id, user_id, title, created_at, updated_at, summary, summary_up_to
 messages                id, conversation_id, role, content, tool_calls JSONB, tool_call_id, created_at
 files                   id, user_id, conversation_id, filepath, filename, file_type, created_at
+report_cache            id, stock_code, report_type, report_year, distilled_markdown, created_at
+ta_strategies           id, name, aliases[], description, indicators[], parameters JSONB, source_url, created_at, updated_at
 ```
 
 **Key `accounts.py` functions**:
@@ -196,6 +198,9 @@ POST /api/chat/send  {message, mode: "debate"}
 | `sources.py` | `lookup_data_sources`, `save_data_source` | Local knowledge base (known financial URLs) |
 | `cache.py` | `@cache(ttl)` decorator | In-memory LRU (5 min TTL, 200 entry cap) |
 | `trade_analyzer.py` | `analyze_trade_opportunity`, `run_hypothesis_debate` | Orchestrates all of the above |
+| `ohlcv.py` | `fetch_ohlcv` | marketdata Postgres `ohlcv` table |
+| `ta_strategies.py` | `lookup_ta_strategy`, `save_ta_strategy`, `update_ta_strategy` | myaiagent Postgres `ta_strategies` table |
+| `ta_executor.py` | `run_ta_script` | subprocess (pandas-ta + plotly); MiniMax for retry rewrites |
 | `utils.py` | Shared HTTP helpers, encoding detection | — |
 
 ### Critical Tool Notes
