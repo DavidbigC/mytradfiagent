@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-02-23 — Add run_ta_script tool with subprocess sandbox and 3-attempt retry
+
+**What:** Created `tools/ta_executor.py` providing a sandboxed Python execution environment for LLM-generated technical analysis scripts, plus full unit test coverage.
+
+**Files:**
+- `tools/ta_executor.py` — created; `run_ta_script` async function + `RUN_TA_SCRIPT_SCHEMA`, `_make_wrapper_script`, `_rewrite_script` helpers
+- `tests/test_ta_executor.py` — created; 5 pytest-asyncio tests covering sandbox allowlist, sandbox blocklist, success-on-first-attempt, 3-attempt exhaustion, and success-on-second-attempt
+- `requirements.txt` — added `pandas-ta` and `plotly`
+
+**Details:**
+- Sandbox uses `sys._getframe(1)` to determine whether an import originates from user code (`<string>`) vs library internals (site-packages path); only user-level imports are checked against the allowlist/blocklist
+- `subprocess.run` is wrapped with `asyncio.to_thread` to avoid blocking the uvicorn event loop
+- On script failure, `_rewrite_script` calls MiniMax to produce a fixed version; retries up to `_MAX_RETRIES=3` times
+- Output path follows the same `output/{user_id}/ta_{code}_{YYYYMMDD}_{4char}.html` convention as `output.py`
+- `fetch_ohlcv` is awaited directly inside `run_ta_script` (no `run_until_complete`)
+
 ## 2026-02-23 — Add ta_strategies lookup/save/update tools with tests
 
 **What:** Created the TA strategy knowledge base tools (`lookup_ta_strategy`, `save_ta_strategy`, `update_ta_strategy`) backed by the `ta_strategies` Postgres table, plus full unit test coverage with mocked DB pool.
