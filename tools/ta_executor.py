@@ -261,7 +261,7 @@ async def run_ta_script(stock_code: str, script: str, timeframe: str = "5m", bar
                 capture_output=True,
                 text=True,
                 timeout=_TIMEOUT_SECONDS,
-                env={**os.environ, "TA_DATA": data_json, "TA_OUTPUT_PATH": output_path},
+                env={**os.environ, "TA_DATA": data_json, "TA_OUTPUT_PATH": output_path, "PYTHONWARNINGS": "ignore::FutureWarning"},
             )
         except subprocess.TimeoutExpired:
             last_error = f"Script timed out after {_TIMEOUT_SECONDS}s"
