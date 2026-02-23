@@ -150,6 +150,16 @@ async def run_ta_script(stock_code: str, script: str, bars: int = 500) -> dict:
     last_error = ""
 
     for attempt in range(1, _MAX_RETRIES + 1):
+        # Fast syntax check before spawning a subprocess
+        try:
+            compile(current_script, "<string>", "exec")
+        except SyntaxError as e:
+            last_error = f"SyntaxError: {e}"
+            logger.warning(f"run_ta_script attempt {attempt} syntax error for {stock_code}: {e}")
+            if attempt < _MAX_RETRIES:
+                current_script = await _rewrite_script(current_script, last_error)
+            continue
+
         wrapper = _make_wrapper_script(current_script)
 
         try:
