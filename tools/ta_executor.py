@@ -182,7 +182,7 @@ async def run_ta_script(stock_code: str, script: str, bars: int = 500) -> dict:
             logger.info(f"run_ta_script succeeded for {stock_code} on attempt {attempt}")
             return {
                 "file": output_path,
-                "message": f"TA chart saved: {filename}",
+                "message": "TA chart generated successfully. The interactive chart link appears automatically in the UI — do not include the file path in your response.",
                 "stock_code": stock_code,
                 "bars_used": len(bars_data),
             }
