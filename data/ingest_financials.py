@@ -157,13 +157,25 @@ def get_stock_list():
     return stocks  # list of (code, exchange) e.g. ('600000', 'SH')
 
 
-def get_quarters_to_fetch(cur):
+def get_stocks_in_db(cur):
+    """Return set of stock codes already present in financials."""
+    cur.execute("SELECT DISTINCT code FROM financials")
+    return {row[0] for row in cur.fetchall()}
+
+
+def get_quarters_to_fetch(cur, force_full=False):
     """Return list of (year, quarter) to fetch."""
     today = date.today()
-    end_year = today.year
-    end_q = (today.month - 1) // 3 + 1
+    cur_q = (today.month - 1) // 3 + 1
+    # Use the last *completed* quarter — the current quarter has no reports yet
+    if cur_q == 1:
+        end_year = today.year - 1
+        end_q = 4
+    else:
+        end_year = today.year
+        end_q = cur_q - 1
 
-    if FULL_MODE:
+    if FULL_MODE or force_full:
         start_year = today.year - YEARS_OF_HISTORY
         start_q = 1
     else:
@@ -270,38 +282,20 @@ def worker(chunk_id, stocks_chunk, quarters, counter, lock):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    from multiprocessing import Pool, Manager, Value
-    import ctypes
-
-    # Use a temp BaoStock login just to get quarter range from DB
-    bs.login()
-    print(f"BaoStock: connected")
-    print(f"Mode: {'FULL ({} years)'.format(YEARS_OF_HISTORY) if FULL_MODE else 'incremental'} | LOCAL_TEST: {LOCAL_TEST}")
-
-    mkt_conn = get_marketdata_conn()
-    mkt_cur = mkt_conn.cursor()
-    quarters = get_quarters_to_fetch(mkt_cur)
-    mkt_cur.close()
-    mkt_conn.close()
-    bs.logout()
-
-    if not quarters:
-        print("Already up to date.")
-        exit()
-
+def run_pass(label, stocks, quarters):
+    """Run a worker pool for a set of stocks × quarters. Returns total inserted."""
+    if not stocks or not quarters:
+        return 0
     start_y, start_q = quarters[0]
     end_y, end_q = quarters[-1]
-    print(f"Quarters: {start_y}Q{start_q} → {end_y}Q{end_q} ({len(quarters)} quarters)")
-
-    stocks = get_stock_list()
-    print(f"Stocks: {len(stocks)}")
-
+    print(f"\n── {label}: {len(stocks)} stocks × {len(quarters)} quarters "
+          f"({start_y}Q{start_q} → {end_y}Q{end_q})")
     WORKERS = 6
     chunks = [stocks[i::WORKERS] for i in range(WORKERS)]
     total_ops = len(stocks) * len(quarters)
     print(f"Workers: {WORKERS} | Total API calls: {total_ops}")
 
+    from multiprocessing import Pool, Manager
     with Manager() as manager:
         counter = manager.Namespace()
         counter.value = 0
@@ -314,5 +308,43 @@ if __name__ == "__main__":
                 worker,
                 [(i, chunks[i], quarters, counter, lock) for i in range(WORKERS)]
             )
+    inserted = sum(results)
+    print(f"{label} done. Inserted/updated: {inserted} rows.")
+    return inserted
 
-    print(f"Done. Total inserted/updated: {sum(results)} rows.")
+
+if __name__ == "__main__":
+    bs.login()
+    print(f"BaoStock: connected")
+    print(f"Mode: {'FULL ({} years)'.format(YEARS_OF_HISTORY) if FULL_MODE else 'incremental'} | LOCAL_TEST: {LOCAL_TEST}")
+
+    mkt_conn = get_marketdata_conn()
+    mkt_cur = mkt_conn.cursor()
+    in_db = get_stocks_in_db(mkt_cur)
+    incr_quarters = get_quarters_to_fetch(mkt_cur)
+    full_quarters = get_quarters_to_fetch(mkt_cur, force_full=True)
+    mkt_cur.close()
+    mkt_conn.close()
+    bs.logout()
+
+    stocks = get_stock_list()
+    missing = [(c, e) for c, e in stocks if c not in in_db]
+    existing = [(c, e) for c, e in stocks if c in in_db]
+
+    print(f"Stocks: {len(stocks)} total | {len(missing)} missing from DB | {len(existing)} have existing data")
+    if missing:
+        print(f"Missing: {', '.join(c for c, _ in missing[:20])}" + (f" … +{len(missing)-20} more" if len(missing) > 20 else ""))
+
+    total = 0
+    # Pass 1: stocks with no data at all — fetch full history
+    total += run_pass("MISSING STOCKS (full history)", missing, full_quarters)
+    # Pass 2: stocks already in DB — fetch only new quarters
+    if incr_quarters:
+        total += run_pass("INCREMENTAL (existing stocks)", existing, incr_quarters)
+    else:
+        print("\nExisting stocks already up to date.")
+
+    if total == 0 and not missing and not incr_quarters:
+        print("Nothing to fetch.")
+    else:
+        print(f"\nAll done. Total inserted/updated: {total} rows.")
