@@ -297,7 +297,7 @@ if __name__ == "__main__":
     stocks = get_stock_list()
     print(f"Stocks: {len(stocks)}")
 
-    WORKERS = 4
+    WORKERS = 6
     chunks = [stocks[i::WORKERS] for i in range(WORKERS)]
     total_ops = len(stocks) * len(quarters)
     print(f"Workers: {WORKERS} | Total API calls: {total_ops}")
