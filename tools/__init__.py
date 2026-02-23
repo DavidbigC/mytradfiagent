@@ -34,6 +34,11 @@ from tools.trade_analyzer import analyze_trade_opportunity, run_hypothesis_debat
 from tools.financials_db import fetch_baostock_financials, FETCH_BAOSTOCK_FINANCIALS_SCHEMA
 from tools.ohlcv import fetch_ohlcv, FETCH_OHLCV_SCHEMA
 from tools.openbb_data import fetch_global_market_data, FETCH_GLOBAL_MARKET_DATA_SCHEMA
+from tools.ta_strategies import (
+    lookup_ta_strategy, save_ta_strategy, update_ta_strategy,
+    LOOKUP_TA_STRATEGY_SCHEMA, SAVE_TA_STRATEGY_SCHEMA, UPDATE_TA_STRATEGY_SCHEMA,
+)
+from tools.ta_executor import run_ta_script, RUN_TA_SCRIPT_SCHEMA
 
 TOOL_SCHEMAS = [
     LOOKUP_DATA_SOURCES_SCHEMA,
@@ -64,6 +69,10 @@ TOOL_SCHEMAS = [
     FETCH_BAOSTOCK_FINANCIALS_SCHEMA,
     FETCH_OHLCV_SCHEMA,
     FETCH_GLOBAL_MARKET_DATA_SCHEMA,
+    LOOKUP_TA_STRATEGY_SCHEMA,
+    SAVE_TA_STRATEGY_SCHEMA,
+    UPDATE_TA_STRATEGY_SCHEMA,
+    RUN_TA_SCRIPT_SCHEMA,
     # ANALYZE_TRADE_SCHEMA excluded — only reachable via the debate button, not the agent loop
 ]
 
@@ -97,6 +106,10 @@ TOOL_MAP = {
     "fetch_baostock_financials": fetch_baostock_financials,
     "fetch_ohlcv": fetch_ohlcv,
     "fetch_global_market_data": fetch_global_market_data,
+    "lookup_ta_strategy": lookup_ta_strategy,
+    "save_ta_strategy": save_ta_strategy,
+    "update_ta_strategy": update_ta_strategy,
+    "run_ta_script": run_ta_script,
 }
 
 
