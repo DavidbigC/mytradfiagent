@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-02-23 — Fix messages going to wrong conversation on mobile
+
+**What:** When `POST /api/chat/send` received no `conversation_id`, the backend fell through to `get_active_conversation` which reused the most recent existing conversation. On mobile, tab discards after backgrounding cause the frontend to reload with `activeId = null`, triggering this path. Now a new conversation is created explicitly instead.
+
+**Files:**
+- `api_chat.py` — modified `send_message()`: create new conversation when `conversation_id` is null; simplify auto-title to query by `run.conv_id` directly
+
+**Details:**
+- Added `else: target_conv_id = await new_conversation(user_id)` branch so `run.conv_id` is always set at `AgentRun` creation
+- Auto-title code now queries `WHERE id = $1` using `run.conv_id` instead of `ORDER BY updated_at DESC LIMIT 1` — removes race condition and the now-dead `run.conv_id is None` branch
+
 ## 2026-02-23 — Add A-share backtesting rules
 
 **What:** Added A-share specific backtesting rules document, injected it into the planning prompt, and captured `run_ta_script` stdout for returning backtest statistics.

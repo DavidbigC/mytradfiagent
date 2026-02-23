@@ -313,7 +313,6 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    target_conv_id: UUID | None = None
     if body.conversation_id:
         target_conv_id = UUID(body.conversation_id)
         pool = await get_pool()
@@ -323,8 +322,10 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             )
             if owner != user_id:
                 raise HTTPException(403, "Not your conversation")
+    else:
+        target_conv_id = await new_conversation(user_id)
 
-    run = AgentRun(task=None, conv_id=target_conv_id)  # type: ignore[arg-type]
+    run = AgentRun(task=None, conv_id=target_conv_id)
 
     async def on_status(text: str):
         run.put({"event": "status", "data": text})
@@ -358,19 +359,16 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             try:
                 pool = await get_pool()
                 async with pool.acquire() as conn:
-                    conv_row = await conn.fetchrow(
-                        "SELECT id, title FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1",
-                        user_id,
+                    title_row = await conn.fetchrow(
+                        "SELECT title FROM conversations WHERE id = $1",
+                        run.conv_id,
                     )
-                    if conv_row and not conv_row["title"]:
+                    if title_row and not title_row["title"]:
                         title = message[:50] + ("..." if len(message) > 50 else "")
                         await conn.execute(
                             "UPDATE conversations SET title = $1 WHERE id = $2",
-                            title, conv_row["id"],
+                            title, run.conv_id,
                         )
-                        # Also update run.conv_id if we didn't have it yet
-                        if run.conv_id is None:
-                            run.conv_id = conv_row["id"]
             except Exception:
                 pass
 
