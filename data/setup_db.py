@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time setup: creates the marketdata database, ohlcv_5m and financials tables."""
+"""One-time setup: creates the marketdata database, ohlcv_5m, financials, and fund tables."""
 import os
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS fund_fees (
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS fund_nav (
-    fund_code        TEXT,
+    fund_code        TEXT,  -- no FK to funds: high-volume append table
     date             DATE,
     unit_nav         NUMERIC(12,4),
     accum_nav        NUMERIC(12,4),
@@ -206,7 +206,7 @@ cur.execute("CREATE INDEX IF NOT EXISTS fund_nav_code_date ON fund_nav (fund_cod
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS fund_price (
-    fund_code            TEXT,
+    fund_code            TEXT,  -- no FK to funds: high-volume append table
     date                 DATE,
     open                 NUMERIC(12,4),
     high                 NUMERIC(12,4),
@@ -223,7 +223,7 @@ cur.execute("CREATE INDEX IF NOT EXISTS fund_price_code_date ON fund_price (fund
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS fund_holdings (
-    fund_code     TEXT,
+    fund_code     TEXT,  -- no FK to funds: high-volume append table
     quarter       TEXT,
     holding_type  TEXT,
     security_code TEXT,
