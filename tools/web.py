@@ -3,7 +3,7 @@ import logging
 import httpx
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
-from config import GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
+from config import TAVILY_API_KEY, GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
 
 try:
     from ddgs import DDGS
@@ -113,8 +113,52 @@ async def _grok_web_search(query: str) -> dict:
         return await asyncio.to_thread(_ddg_search_sync, query)
 
 
+_TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+_TAVILY_EXTRACT_URL = "https://api.tavily.com/extract"
+_TAVILY_HEADERS = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {TAVILY_API_KEY}",
+}
+
+
+async def _tavily_search(query: str) -> dict:
+    """Primary search via Tavily. Falls back to Grok on error."""
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                _TAVILY_SEARCH_URL,
+                json={
+                    "query": query,
+                    "search_depth": "basic",
+                    "max_results": 6,
+                    "topic": "finance",
+                    "include_answer": True,
+                    "time_range": "month",
+                },
+                headers=_TAVILY_HEADERS,
+            )
+            r.raise_for_status()
+            data = r.json()
+        answer = data.get("answer") or ""
+        sources = [
+            {"title": res.get("title", ""), "url": res["url"], "snippet": res.get("content", "")}
+            for res in data.get("results", [])
+        ]
+        if len(answer) > 2000:
+            answer = answer[:2000] + "...[truncated]"
+        logger.info(f"Tavily search: {len(sources)} results for '{query[:60]}'")
+        return {"answer": answer, "sources": sources}
+    except Exception as e:
+        logger.warning(f"Tavily search failed ({e}), falling back to Grok")
+        if _grok_client:
+            return await _grok_web_search(query)
+        return await asyncio.to_thread(_ddg_search_sync, query)
+
+
 async def web_search(query: str) -> dict:
-    """Search the web. Uses Grok live search if configured, otherwise DuckDuckGo."""
+    """Search the web. Priority: Tavily → Grok → DuckDuckGo."""
+    if TAVILY_API_KEY:
+        return await _tavily_search(query)
     if _grok_client:
         return await _grok_web_search(query)
     return await asyncio.to_thread(_ddg_search_sync, query)
@@ -276,7 +320,36 @@ def _needs_playwright(url: str) -> bool:
     return any(domain in url for domain in _JS_HEAVY_DOMAINS)
 
 
+async def _tavily_extract(url: str) -> str | None:
+    """Extract page content via Tavily. Returns markdown string or None on failure."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                _TAVILY_EXTRACT_URL,
+                json={"urls": url, "extract_depth": "basic", "format": "markdown"},
+                headers=_TAVILY_HEADERS,
+            )
+            r.raise_for_status()
+            data = r.json()
+        results = data.get("results", [])
+        if results and results[0].get("raw_content"):
+            content = results[0]["raw_content"]
+            logger.info(f"Tavily extract: {len(content)} chars for {url}")
+            return content
+    except Exception as e:
+        logger.warning(f"Tavily extract failed for {url}: {e}")
+    return None
+
+
 async def scrape_webpage(url: str) -> dict:
+    # Primary: Tavily extract — clean markdown, no encoding issues, no Playwright needed
+    if TAVILY_API_KEY and not _needs_playwright(url):
+        content = await _tavily_extract(url)
+        if content:
+            if len(content) > 15000:
+                content = content[:15000] + "\n...[truncated]"
+            return {"url": url, "content": content, "source": "tavily"}
+
     # Check if this site needs Playwright (forums, SPAs, anti-bot protection)
     if _needs_playwright(url) and PLAYWRIGHT_AVAILABLE:
         logger.info(f"Using Playwright for JS-heavy site: {url}")
