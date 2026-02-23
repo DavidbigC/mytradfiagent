@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-02-23 — Redirect complex novel TA requests to suitable alternatives
+
+**What:** Added a system prompt rule so the agent politely explains LLM limitations with complex pattern-based TA theories (缠论, 波浪理论, 江恩理论, etc.) and suggests better-suited alternatives (oscillators, indicators, backtesting, fundamentals).
+
+**Files:**
+- `config.py` — added one bullet to the TA charts section of `get_system_prompt()`
+
+**Details:**
+- LLMs reliably implement standard oscillators/indicators but frequently produce empty or incorrect charts for complex theories requiring multi-step algorithmic rules (包含关系处理, fractal sequencing, subjective wave counting)
+- Agent now sets expectations upfront rather than silently producing wrong output
+
 ## 2026-02-23 — Conversation sharing
 
 **What:** Added per-conversation public sharing via unique URL. Owners toggle sharing on/off; visitors get a read-only view with no login required.
