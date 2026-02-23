@@ -151,6 +151,94 @@ cur.execute("CREATE INDEX IF NOT EXISTS financials_code_stat ON financials (code
 conn.commit()
 print("financials: unified table + index ready")
 
+# ── Step 4: Fund tables ───────────────────────────────────────────────────────
+cur.execute("""
+CREATE TABLE IF NOT EXISTS funds (
+    code            TEXT PRIMARY KEY,
+    name            TEXT,
+    full_name       TEXT,
+    type            TEXT,
+    exchange        TEXT,
+    inception_date  DATE,
+    tracking_index  TEXT,
+    mgmt_company    TEXT,
+    custodian       TEXT,
+    updated_at      TIMESTAMPTZ DEFAULT now()
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_managers (
+    fund_code     TEXT REFERENCES funds(code),
+    manager_name  TEXT,
+    start_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+    end_date      DATE,
+    PRIMARY KEY (fund_code, manager_name, start_date)
+)
+""")
+cur.execute("CREATE INDEX IF NOT EXISTS fund_managers_code ON fund_managers (fund_code)")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_fees (
+    id                SERIAL PRIMARY KEY,
+    fund_code         TEXT REFERENCES funds(code),
+    mgmt_rate         NUMERIC(8,4),
+    custody_rate      NUMERIC(8,4),
+    sales_svc_rate    NUMERIC(8,4),
+    subscription_rate NUMERIC(8,4),
+    effective_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+    end_date          DATE,
+    UNIQUE (fund_code, effective_date)
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_nav (
+    fund_code        TEXT,
+    date             DATE,
+    unit_nav         NUMERIC(12,4),
+    accum_nav        NUMERIC(12,4),
+    daily_return_pct NUMERIC(8,4),
+    PRIMARY KEY (fund_code, date)
+)
+""")
+cur.execute("CREATE INDEX IF NOT EXISTS fund_nav_code_date ON fund_nav (fund_code, date DESC)")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_price (
+    fund_code            TEXT,
+    date                 DATE,
+    open                 NUMERIC(12,4),
+    high                 NUMERIC(12,4),
+    low                  NUMERIC(12,4),
+    close                NUMERIC(12,4),
+    volume               BIGINT,
+    amount               NUMERIC(20,2),
+    turnover_rate        NUMERIC(8,4),
+    premium_discount_pct NUMERIC(8,4),
+    PRIMARY KEY (fund_code, date)
+)
+""")
+cur.execute("CREATE INDEX IF NOT EXISTS fund_price_code_date ON fund_price (fund_code, date DESC)")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_holdings (
+    fund_code     TEXT,
+    quarter       TEXT,
+    holding_type  TEXT,
+    security_code TEXT,
+    security_name TEXT,
+    pct_of_nav    NUMERIC(8,4),
+    shares        BIGINT,
+    market_value  NUMERIC(20,2),
+    PRIMARY KEY (fund_code, quarter, holding_type, security_code)
+)
+""")
+cur.execute("CREATE INDEX IF NOT EXISTS fund_holdings_code_q ON fund_holdings (fund_code, quarter)")
+
+conn.commit()
+print("fund tables: funds, fund_managers, fund_fees, fund_nav, fund_price, fund_holdings ready")
+
 cur.close()
 conn.close()
 print("Setup complete.")
