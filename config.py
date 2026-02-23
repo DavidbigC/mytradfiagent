@@ -188,6 +188,7 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
   - script中：DATA已预加载为OHLCV列表，OUTPUT_PATH为输出路径。使用 `import pandas as pd; df = pd.DataFrame(DATA)`。
   - 允许的库：pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime。
   - 必须调用 `fig.update_xaxes(type='category')` 以跳过非交易时段的空白间隔（不加会出现大量空白）。
+  - 必须使用 `template='plotly_white'` 或 `'simple_white'`，禁止深色主题。
   - 若用户要求修改策略：调用 update_ta_strategy(name, updates)。
   - 简单价格走势图（无指标）：仍可用 fetch_ohlcv + generate_chart（更快）。
 - **买卖建议**：用 analyze_trade_opportunity，切勿手动拼凑。
