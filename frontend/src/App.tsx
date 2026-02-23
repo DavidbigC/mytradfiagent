@@ -5,6 +5,7 @@ import LoginPage from "./pages/LoginPage";
 import ChatLayout from "./pages/ChatLayout";
 import GuidancePage from "./pages/GuidancePage";
 import ShowcasePage from "./pages/ShowcasePage";
+import SharedConversationPage from "./pages/SharedConversationPage";
 
 export default function App() {
   const { token } = useAuth();
@@ -15,6 +16,7 @@ export default function App() {
       <Route path="/login" element={token ? <Navigate to="/" /> : <LoginPage />} />
       <Route path="/guidance" element={<GuidancePage />} />
       <Route path="/showcase" element={<ShowcasePage />} />
+      <Route path="/share/:shareToken" element={<SharedConversationPage />} />
       <Route path="/*" element={token ? <ChatLayout /> : <Navigate to="/" />} />
     </Routes>
   );

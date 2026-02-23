@@ -130,6 +130,24 @@ export async function deleteConversation(token: string, convId: string) {
   return res.json();
 }
 
+export async function toggleConversationShare(token: string, convId: string, enabled: boolean): Promise<{ share_token: string | null; is_public: boolean }> {
+  const res = await fetch(`${BASE}/api/chat/conversations/${convId}/share`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({ enabled }),
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to update sharing");
+  return res.json();
+}
+
+export async function fetchSharedConversation(shareToken: string): Promise<{ title: string; messages: Array<{ role: string; content: string; created_at: string }> }> {
+  const res = await fetch(`${BASE}/api/chat/share/${shareToken}`);
+  if (res.status === 404) throw new Error("NOT_FOUND");
+  if (!res.ok) throw new Error("Failed to load shared conversation");
+  return res.json();
+}
+
 // --- User Files ---
 
 export async function fetchUserFiles(token: string, fileType?: string) {

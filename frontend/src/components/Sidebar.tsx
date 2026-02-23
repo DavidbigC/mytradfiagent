@@ -10,6 +10,8 @@ interface Conversation {
   title: string;
   updated_at: string;
   mode: string;
+  share_token: string | null;
+  is_public: boolean;
 }
 
 interface Props {
@@ -19,18 +21,32 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string) => void;
   onDebate: () => void;
+  onShare: (id: string, enabled: boolean) => void;
   open: boolean;
   onClose: () => void;
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, open, onClose }: Props) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onDebate, onShare, open, onClose }: Props) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useT();
   const { theme, toggleTheme } = useTheme();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showReports, setShowReports] = useState(false);
+  const [shareOpenId, setShareOpenId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const isAdmin = user?.username === "davidc";
+
+  function handleShareToggle(conv: Conversation) {
+    onShare(conv.id, !conv.is_public);
+  }
+
+  function handleCopy(url: string) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <>
@@ -47,24 +63,70 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
         <div className="conversation-list">
           {conversations.map((c) => (
-            <div
-              key={c.id}
-              className={`conversation-item ${c.id === activeId ? "active" : ""}`}
-              onClick={() => { onSelect(c.id); onClose(); }}
-            >
-              <span className="conv-title">
-                {c.mode === "debate" && (
-                  <span className="conv-mode-badge">{lang === "zh" ? "辩论" : "Debate"}</span>
-                )}
-                {c.title}
-              </span>
-              <button
-                className="conv-delete"
-                onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                title={t("sidebar.delete")}
+            <div key={c.id}>
+              <div
+                className={`conversation-item ${c.id === activeId ? "active" : ""}`}
+                onClick={() => { onSelect(c.id); onClose(); }}
               >
-                &times;
-              </button>
+                <span className="conv-title">
+                  {c.mode === "debate" && (
+                    <span className="conv-mode-badge">{lang === "zh" ? "辩论" : "Debate"}</span>
+                  )}
+                  {c.title}
+                </span>
+                <div className="conv-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className={`conv-share ${c.is_public ? "active" : ""}`}
+                    onClick={() => setShareOpenId(shareOpenId === c.id ? null : c.id)}
+                    title={lang === "zh" ? "分享" : "Share"}
+                  >
+                    🔗
+                  </button>
+                  <button
+                    className="conv-delete"
+                    onClick={() => onDelete(c.id)}
+                    title={t("sidebar.delete")}
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
+
+              {shareOpenId === c.id && (
+                <div className="share-panel" onClick={(e) => e.stopPropagation()}>
+                  <div className="share-panel-row">
+                    <span className="share-label">
+                      {c.is_public
+                        ? (lang === "zh" ? "已开启分享" : "Sharing enabled")
+                        : (lang === "zh" ? "未开启分享" : "Sharing disabled")}
+                    </span>
+                    <button
+                      className={`share-toggle-btn ${c.is_public ? "enabled" : ""}`}
+                      onClick={() => handleShareToggle(c)}
+                    >
+                      {c.is_public
+                        ? (lang === "zh" ? "关闭" : "Disable")
+                        : (lang === "zh" ? "开启" : "Enable")}
+                    </button>
+                  </div>
+                  {c.is_public && c.share_token && (
+                    <div className="share-url-row">
+                      <input
+                        className="share-url-input"
+                        readOnly
+                        value={`${window.location.origin}/share/${c.share_token}`}
+                        onFocus={(e) => e.target.select()}
+                      />
+                      <button
+                        className="share-copy-btn"
+                        onClick={() => handleCopy(`${window.location.origin}/share/${c.share_token}`)}
+                      >
+                        {copied ? (lang === "zh" ? "已复制" : "Copied!") : (lang === "zh" ? "复制" : "Copy")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

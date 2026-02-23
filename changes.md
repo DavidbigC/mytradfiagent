@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-02-23 — Conversation sharing
+
+**What:** Added per-conversation public sharing via unique URL. Owners toggle sharing on/off; visitors get a read-only view with no login required.
+
+**Files:**
+- `db.py` — added `share_token VARCHAR(32) UNIQUE` and `is_public BOOLEAN DEFAULT FALSE` columns to `conversations`
+- `api_chat.py` — updated `list_conversations` to return share fields; added `POST /conversations/{conv_id}/share` toggle endpoint; added `GET /share/{share_token}` public endpoint
+- `frontend/src/api.ts` — added `toggleConversationShare` and `fetchSharedConversation` functions
+- `frontend/src/pages/ChatLayout.tsx` — added `share_token`/`is_public` to `Conversation` interface; added `handleShare` callback; passes `onShare` to Sidebar
+- `frontend/src/components/Sidebar.tsx` — added share button (🔗) per conversation row with inline panel (toggle + URL + copy button)
+- `frontend/src/App.tsx` — added `/share/:shareToken` route
+- `frontend/src/pages/SharedConversationPage.tsx` — created; public read-only conversation view using existing `MessageBubble` component
+
 ## 2026-02-23 — Improve chart generation completeness via better prompting
 
 **What:** The `_polish_script` rewriter was silently dropping visual elements (e.g. 笔 stroke lines, 中枢 zones) when simplifying scripts. Added visual-completeness rules and a two-step enumerate-then-rewrite instruction so all requested overlays are always preserved and implemented.

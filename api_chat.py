@@ -102,8 +102,8 @@ async def list_conversations(user: dict = Depends(get_current_user)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT id, title, updated_at, mode FROM conversations
-               WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 50""",
+            """SELECT id, title, updated_at, mode, share_token, is_public
+               FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 50""",
             user["user_id"],
         )
     return [
@@ -112,6 +112,8 @@ async def list_conversations(user: dict = Depends(get_current_user)):
             "title": r["title"] or "New Chat",
             "updated_at": r["updated_at"].isoformat(),
             "mode": r["mode"] or "normal",
+            "share_token": r["share_token"] if r["share_token"] else None,
+            "is_public": r["is_public"],
         }
         for r in rows
     ]
@@ -155,6 +157,46 @@ async def get_messages(conv_id: str, limit: int = 100, user: dict = Depends(get_
     return {"messages": messages, "files": files}
 
 
+class ShareBody(BaseModel):
+    enabled: bool
+
+
+@router.post("/conversations/{conv_id}/share")
+async def toggle_share(conv_id: str, body: ShareBody, user: dict = Depends(get_current_user)):
+    import secrets
+    pool = await get_pool()
+    cid = UUID(conv_id)
+    async with pool.acquire() as conn:
+        owner = await conn.fetchval(
+            "SELECT user_id FROM conversations WHERE id = $1", cid
+        )
+        if owner != user["user_id"]:
+            raise HTTPException(403, "Not your conversation")
+
+        if body.enabled:
+            token = secrets.token_urlsafe(24)
+            await conn.execute(
+                """UPDATE conversations
+                   SET is_public = TRUE,
+                       share_token = COALESCE(share_token, $1)
+                   WHERE id = $2""",
+                token, cid,
+            )
+        else:
+            await conn.execute(
+                "UPDATE conversations SET is_public = FALSE WHERE id = $1",
+                cid,
+            )
+
+        row = await conn.fetchrow(
+            "SELECT share_token, is_public FROM conversations WHERE id = $1", cid
+        )
+    return {
+        "share_token": row["share_token"],
+        "is_public": row["is_public"],
+    }
+
+
 @router.delete("/conversations/{conv_id}")
 async def delete_conversation(conv_id: str, user: dict = Depends(get_current_user)):
     pool = await get_pool()
@@ -168,6 +210,35 @@ async def delete_conversation(conv_id: str, user: dict = Depends(get_current_use
         await conn.execute("DELETE FROM messages WHERE conversation_id = $1", cid)
         await conn.execute("DELETE FROM conversations WHERE id = $1", cid)
     return {"ok": True}
+
+
+@router.get("/share/{share_token}")
+async def get_shared_conversation(share_token: str, limit: int = 100):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        conv = await conn.fetchrow(
+            "SELECT id, title FROM conversations WHERE share_token = $1 AND is_public = TRUE",
+            share_token,
+        )
+        if not conv:
+            raise HTTPException(404, "Conversation not found or sharing has been disabled")
+
+        rows = await conn.fetch(
+            """SELECT role, content, created_at
+               FROM messages WHERE conversation_id = $1
+                 AND role IN ('user', 'assistant')
+               ORDER BY id ASC LIMIT $2""",
+            conv["id"], limit,
+        )
+    messages = [
+        {
+            "role": r["role"],
+            "content": r["content"] or "",
+            "created_at": r["created_at"].isoformat(),
+        }
+        for r in rows
+    ]
+    return {"title": conv["title"] or "Shared Conversation", "messages": messages}
 
 
 @router.get("/files")

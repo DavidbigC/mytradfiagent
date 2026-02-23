@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../store";
 import { useT } from "../i18n";
-import { fetchConversations, createConversation, deleteConversation } from "../api";
+import { fetchConversations, createConversation, deleteConversation, toggleConversationShare } from "../api";
 import Sidebar from "../components/Sidebar";
 import ChatView from "../components/ChatView";
 
@@ -10,6 +10,8 @@ interface Conversation {
   title: string;
   updated_at: string;
   mode: string;
+  share_token: string | null;
+  is_public: boolean;
 }
 
 export default function ChatLayout() {
@@ -73,6 +75,20 @@ export default function ChatLayout() {
     loadConversations();
   }
 
+  async function handleShare(id: string, enabled: boolean) {
+    if (!token) return;
+    try {
+      const result = await toggleConversationShare(token, id, enabled);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, share_token: result.share_token, is_public: result.is_public } : c
+        )
+      );
+    } catch (err: any) {
+      if (err.message === "UNAUTHORIZED") logout();
+    }
+  }
+
   async function handleDebateSubmit() {
     const question = debateInput.trim();
     if (!question || !token) return;
@@ -115,6 +131,7 @@ export default function ChatLayout() {
         onNew={handleNew}
         onDelete={handleDelete}
         onDebate={() => setShowDebateModal(true)}
+        onShare={handleShare}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
