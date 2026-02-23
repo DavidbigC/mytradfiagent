@@ -32,8 +32,12 @@ export default function ReportsPanel({ onClose }: Props) {
       .finally(() => setLoading(false));
   }, [token, filter]);
 
-  function handleDownload(filepath: string, filename: string) {
+  function handleOpen(filepath: string, filename: string, fileType: string | null) {
     if (!token) return;
+    if (fileType === "html") {
+      window.open(`/api/chat/files/${filepath}?token=${token}`, "_blank", "noopener,noreferrer");
+      return;
+    }
     fetch(`/api/chat/files/${filepath}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -64,6 +68,7 @@ export default function ReportsPanel({ onClose }: Props) {
     { label: t("reports.pdfs"), value: "pdf" },
     { label: t("reports.charts"), value: "png" },
     { label: t("reports.markdowns"), value: "md" },
+    { label: t("reports.charts_interactive"), value: "html" },
   ];
 
   return (
@@ -100,9 +105,9 @@ export default function ReportsPanel({ onClose }: Props) {
           ) : (
             <div className="reports-list">
               {filtered.map((f, i) => (
-                <div key={i} className="report-item" onClick={() => handleDownload(f.filepath, f.filename)}>
+                <div key={i} className="report-item" onClick={() => handleOpen(f.filepath, f.filename, f.file_type)}>
                   <div className="report-icon">
-                    {f.file_type === "pdf" ? "PDF" : f.file_type === "png" ? "IMG" : "MD"}
+                    {f.file_type === "pdf" ? "PDF" : f.file_type === "png" ? "IMG" : f.file_type === "html" ? "📊" : "MD"}
                   </div>
                   <div className="report-info">
                     <div className="report-name">{f.filename}</div>

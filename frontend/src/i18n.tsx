@@ -42,6 +42,7 @@ const translations = {
   "reports.pdfs": { en: "PDFs", zh: "PDF" },
   "reports.charts": { en: "Charts", zh: "图表" },
   "reports.markdowns": { en: "Markdown", zh: "Markdown" },
+  "reports.charts_interactive": { en: "Charts", zh: "互动图表" },
   "reports.empty": { en: "No reports yet", zh: "暂无报告" },
   "reports.from": { en: "from", zh: "来自" },
 

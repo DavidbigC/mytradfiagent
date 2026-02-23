@@ -68,6 +68,19 @@ export default function MessageBubble({ role, content, files, references, thinki
               if (f.endsWith(".png")) {
                 return <img key={i} src={`${f}?token=${token}`} alt="chart" className="chart-image" />;
               }
+              if (f.endsWith(".html")) {
+                return (
+                  <a
+                    key={i}
+                    href={`${f}?token=${token}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="file-link file-link--chart"
+                  >
+                    📊 {filename}
+                  </a>
+                );
+              }
               return (
                 <a
                   key={i}
