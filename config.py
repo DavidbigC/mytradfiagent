@@ -24,6 +24,7 @@ FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
 FIREWORKS_BASE_URL = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
 FIREWORKS_MINIMAX_MODEL = os.getenv("FIREWORKS_MINIMAX_MODEL", "accounts/fireworks/models/minimax-m2p1")
 
+
 # Set MINIMAX_PROVIDER=minimax to use the official API; default is fireworks
 MINIMAX_PROVIDER = os.getenv("MINIMAX_PROVIDER", "fireworks")
 
@@ -117,81 +118,42 @@ Number references in order of first appearance."""
 
 
 def get_planning_prompt() -> str:
-    return """首先，在第一行判断用户问题的类型：
+    return """首先判断意图（第一行必须输出）：
 
-INTENT: chitchat  — 问候、闲聊、或与金融/投资完全无关的问题（如"你好"、"讲个笑话"、"今天天气"）
-INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经济、公司分析、行情、投资、交易等
+INTENT: chitchat  — 问候、闲聊、与金融无关
+INTENT: finance   — 股票/基金/债券/财务/宏观/投资/交易
 
----
+chitchat → 自然口吻直接回答，200字内，无需工具。
 
-**如果输出 INTENT: chitchat**：直接用自然友好的语气回答，不超过200字，无需工具，无需计划。
+finance → 调用任何工具前，输出研究计划（中文，400字内）：
+1. 用户意图与子问题拆分
+2. 工具映射与参数（参考工具描述获取细节）
+3. 数据局限与替代方案
+4. 可并行的工具组
 
----
+## 数据路由规则（必须遵守）
 
-**如果输出 INTENT: finance**：在调用任何工具之前，制定一个详细简洁的研究计划（中文，不超过400字）。
+- 北向资金 → fetch_northbound_flow（禁用 web_search）
+- A股行情/排名 → fetch_multiple_cn_stocks / screen_cn_stocks（禁用 web_search）
+- 资金流向 → fetch_stock_capital_flow / fetch_capital_flow_ranking（禁用 web_search）
+- 财报/年报/季报 → fetch_company_report（优先最新季报；需历史趋势时年报与季报并行调用，切勿单独调用年报）
+- 深度财务比率（ROE分解/现金质量/存货周转）→ fetch_baostock_financials
+- 深度单股 → 并行：fetch_stock_financials + fetch_baostock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history
+- 技术分析 → lookup_ta_strategy → （未找到则 web_search + save_ta_strategy）→ run_ta_script
+- 简单价格走势图 → fetch_ohlcv + generate_chart（更快，无需 run_ta_script）
+- 买卖建议 → analyze_trade_opportunity（禁止手动拼凑）
 
-计划必须包含：
-1. **用户意图**：用户究竟想了解什么？将复合问题拆分为子问题。
-2. **术语解析**：将模糊表述映射到具体数据源（见下方速查表）。
-3. **工具映射**：每个子问题对应哪个工具及参数。
-4. **数据局限性**：明确指出哪些数据真正无法实时获取及替代方案。
-5. **并行规划**：标出可以同时调用的工具组。
+## 国家队/汇金持仓
 
-## 工具能力 & 数据频率速查
+无实时数据，从季度股东披露推断（fetch_top_shareholders 并行查）：
+ETF: 510050 / 510300 / 510500 / 588000 | 银行: 601398 / 601939 / 601988 / 601288
+关键词：中央汇金 / 证金公司 / 汇金资产，对比相邻期变化推断增减仓。
 
-| 工具 | 返回内容 | 数据频率 |
-|------|---------|---------|
-| fetch_northbound_flow(days) | 北向资金每日成交量、占比、各渠道前三股票 | 每日 |
-| fetch_capital_flow_ranking(direction) | 今日全市场主力净流入/流出排行 | 实时 |
-| fetch_stock_capital_flow(code, days) | 单股120天资金流向（大单/超大单/散户） | 每日 |
-| fetch_multiple_cn_stocks / fetch_cn_stock_data | 价格、PE、PB、市值、涨跌幅 | 实时 |
-| screen_cn_stocks(sort_by, filters) | 筛选/排名全部A股（~5200只） | 实时 |
-| fetch_stock_financials(code, statement) | 季度财报（资产负债/利润/现金流），EastMoney来源，10年+ | 季度 |
-| fetch_baostock_financials(code, periods) | 本地BaoStock数据库：ROE、净利率、毛利率、DuPont拆解、CFO/净利润（现金质量）、存货周转天数等30+指标 | 季度 |
-| fetch_ohlcv(code, bars, timeframe, start_date, end_date) | 本地K线数据（2020至今）：5m/1h/1d/1w四档，SQL聚合。5m:500根≈2周；1h:500根≈3月；1d:500根≈2年；1w:500根≈10年。含MA5/MA20/MA60和chart_series | 实时（延迟约1交易日） |
-| lookup_ta_strategy(query) | 从知识库中查找技术分析策略定义、指标列表、默认参数 | 本地 |
-| save_ta_strategy(name, ...) | 将新策略保存至知识库（web_search后调用） | 按需 |
-| update_ta_strategy(name, updates) | 更新现有策略（如用户要求添加指标） | 按需 |
-| run_ta_script(stock_code, script, bars) | 执行pandas-ta脚本生成Plotly交互图表，失败自动重试3次 | 按需 |
-| fetch_top_shareholders(code, periods) | 十大流通股东及持股变动 | 季度披露（滞后1–2月） |
-| fetch_company_report(code, type) | 年报/季报原文 + PDF（Sina Finance） | 季度 |
-| fetch_sina_profit_statement(code, year) | 详细利润表含利息收入/费用明细 | 年度 |
-| fetch_dragon_tiger(code) | 龙虎榜营业部买卖明细 | 事件触发 |
-| fetch_dividend_history(code) | 历史分红记录 | 事件触发 |
-| scan_market_hotspots() | 今日热门题材和板块轮动 | 实时 |
-| analyze_trade_opportunity(code) | 多模型辩论买卖建议（慢，约60秒） | 按需 |
-| web_search(query) | 通用新闻搜索 | 实时 |
-| lookup_data_sources → scrape_webpage | 已知URL直接抓取 | 实时 |
-| dispatch_subagents(tasks) | 并行执行独立子任务 | 按需 |
+## A股回测规则（回测类问题适用）
 
-## 关键数据可用性说明
+T+1（当日买入次日才能卖出）| 仅做多 | 次日开盘价执行信号
+涨跌停：主板 ±10%（60/000-003xxxx）| 科创/创业 ±20%（688/300/301）| 北交所 ±30%（8xxxxx）
+图表标注：买入△(绿·线下) 卖出▽(红·线上)，涨停▲(红) 跌停▽(绿)
+print() 输出（系统自动捕获）：总收益率 / 年化收益率 / 最大回撤 / 夏普比率 / 胜率 / 交易次数
 
-- **国家队/汇金/证金/中央汇金**：无实时数据，仅通过季度股东披露。
-  用 fetch_top_shareholders 查已知持仓（并行调用3–4个）：
-  ETF：510050（上证50）、510300（沪深300）、510500（中证500）、588000（科创50）
-  银行股：601398（工行）、601939（建行）、601988（中行）、601288（农行）
-  在股东名单中查找"中央汇金"/"证金公司"/"汇金资产"，对比相邻期变化推断增减仓方向。
-- **财报/年报/季报/中报阅读**：用户要求财报/年报/季报的时候确保获取最新的报告，不得使用其他财务数据。
-  - 用户要求报告时，优先使用 fetch_company_report。该工具内置 Grok 读取完整报告并生成结构化摘要。需传入 focus_keywords。
-  - **优先顺序**：始终优先获取最新季报。季报数据最新，是主要分析对象。如果年报最新，也需要获取最近的季报进行补充。
-  - **年报用作对比**：如需历史趋势或完整年度数据，可并行调用年报（yearly）作为补充，但**切勿单独调用年报**——必须与最新季报同时调用。
-  - 若不知股票代码，先用 fetch_cn_stock_data 或 web_search 查询。
-- **北向资金**：每日数据，用 fetch_northbound_flow，切勿用 web_search。
-- **A股行情/排名**：用 fetch_multiple_cn_stocks 或 screen_cn_stocks，切勿用 web_search。
-- **深度单股分析**：并行调用 fetch_stock_financials + fetch_baostock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history，同时 dispatch_subagents 抓取股吧情绪。
-- **深度财务比率分析**（ROE分解/现金质量/运营效率）：优先使用 fetch_baostock_financials，它包含 DuPont拆解（dupont_roe/asset_turn/ebit_togr）、CFO/净利润现金质量（cfo_to_np）、存货周转天数（inv_turn_days）等 EastMoney API 没有的指标。
-- **技术分析/指标/策略分析**：
-  1. 先调用 lookup_ta_strategy(query) 查询策略知识库。
-  2. 若未找到：web_search 了解策略定义 → save_ta_strategy() 保存 → 继续。
-  3. 调用 fetch_ohlcv(code, bars=500, timeframe='1d') 获取OHLCV数据。按分析周期选择timeframe：短线用5m/1h，中线用1d，长线用1w。
-  4. 调用 run_ta_script(stock_code, script) 执行pandas-ta计算并生成Plotly交互图表。
-  - script中：DATA已预加载为OHLCV列表，OUTPUT_PATH为输出路径。使用 `import pandas as pd; df = pd.DataFrame(DATA)`。
-  - 允许的库：pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime。
-  - 必须调用 `fig.update_xaxes(type='category')` 以跳过非交易时段的空白间隔（不加会出现大量空白）。
-  - 必须使用 `template='plotly_white'` 或 `'simple_white'`，禁止深色主题。
-  - 若用户要求修改策略：调用 update_ta_strategy(name, updates)。
-  - 简单价格走势图（无指标）：仍可用 fetch_ohlcv + generate_chart（更快）。
-- **买卖建议**：用 analyze_trade_opportunity，切勿手动拼凑。
-- **任何资金流向数据**：切勿使用 web_search，始终使用对应的专用工具。
-
-请输出你的研究计划（简短列表格式）。"""
+请输出研究计划。"""

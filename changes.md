@@ -1,5 +1,14 @@
 # Changes
 
+## 2026-02-23 — Add A-share backtesting rules
+
+**What:** Added A-share specific backtesting rules document, injected it into the planning prompt, and captured `run_ta_script` stdout for returning backtest statistics.
+
+**Files:**
+- `data/backtest_rules.md` — created: board detection by code prefix (±10%/±20%/±30%), T+1 rule, long-only, next-bar-open execution, 涨停/跌停 chart markers, required stats output format
+- `config.py` — added `_load_backtest_rules()` helper; converted `get_planning_prompt()` to f-string; appended `## 回测规则（A股）` section from file
+- `tools/ta_executor.py` — `run_ta_script` now captures `result.stdout` and returns it as `"text"` field alongside the chart file
+
 ## 2026-02-23 — Add run_ta_script tool with subprocess sandbox and 3-attempt retry
 
 **What:** Created `tools/ta_executor.py` providing a sandboxed Python execution environment for LLM-generated technical analysis scripts, plus full unit test coverage.

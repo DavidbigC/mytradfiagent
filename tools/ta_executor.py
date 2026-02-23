@@ -76,32 +76,92 @@ OUTPUT_PATH = _os.environ['TA_OUTPUT_PATH']
 _SCRIPT_RULES = (
     "The script has access to:\n"
     "  DATA        — list of OHLCV dicts: [{ts, open, high, low, close, volume, amount}]\n"
+    "                ts is already a formatted string (e.g. '2024-01-15 09:30') — use it as-is.\n"
     "  OUTPUT_PATH — str, absolute path to write the Plotly .html file\n"
     "Allowed imports: pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime.\n"
     "MANDATORY Plotly rules:\n"
     "  1. Always call fig.update_xaxes(type='category') — eliminates off-hours/weekend gaps.\n"
-    "  2. Always use template='plotly_white' or 'simple_white' — light background, never dark."
+    "  2. Always use template='plotly_white' or 'simple_white' — light background, never dark.\n"
+    "TIMESTAMP RULES (critical — violations cause runtime crashes):\n"
+    "  - NEVER call .strftime() on a pd.Timestamp or datetime column — it raises an error.\n"
+    "  - The ts column in DATA is already a pre-formatted string. Do NOT convert it with\n"
+    "    pd.to_datetime() unless you need it for arithmetic (e.g. date diff, resample).\n"
+    "  - If you must convert: use df['ts'] = pd.to_datetime(df['ts']) for arithmetic only,\n"
+    "    then pass the original string column to Plotly x-axis (not the datetime column).\n"
+    "  - For Plotly x-axis always use the string ts values, never Timestamp objects."
 )
 
 
-async def _rewrite_script(script: str, error: str) -> str:
-    prompt = (
-        f"The following Python script for technical analysis failed with this error:\n\n"
-        f"ERROR:\n{error[:2000]}\n\n"
-        f"SCRIPT:\n{script}\n\n"
-        f"Fix the script. Return ONLY the corrected Python code, no explanation, no markdown fences.\n"
-        f"{_SCRIPT_RULES}"
-    )
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences if present."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+        text = "\n".join(lines[1:end]).strip()
+    return text
+
+
+async def _call_rewriter(prompt: str) -> str:
+    """Call the configured LLM and return stripped code content."""
     response = await _client.chat.completions.create(
         model=_mm_model,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=2000,
+        max_tokens=4000,
     )
-    fixed = response.choices[0].message.content.strip()
-    if fixed.startswith("```"):
-        lines = fixed.split("\n")
-        fixed = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return fixed
+    return _strip_fences(response.choices[0].message.content)
+
+
+async def _polish_script(script: str) -> str:
+    """Pass the agent-drafted script through MiniMax M2.5 for an initial quality pass.
+    This runs before the first execution attempt so M2.5 always writes the actual script."""
+    prompt = (
+        f"Rewrite this Python technical analysis script to be correct and production-quality.\n\n"
+        f"DRAFT SCRIPT:\n{script}\n\n"
+        f"REQUIREMENTS:\n{_SCRIPT_RULES}\n\n"
+        f"Return ONLY the improved Python code. No markdown fences. No explanation."
+    )
+    polished = await _call_rewriter(prompt)
+    try:
+        compile(polished, "<string>", "exec")
+        return polished
+    except SyntaxError:
+        # Polish produced bad syntax — return original and let the retry loop handle it
+        logger.warning("_polish_script produced invalid syntax, using original draft")
+        return script
+
+
+async def _rewrite_script(script: str, error: str) -> str:
+    """Ask MiniMax M2.5 to fix a failing script. Validates syntax internally and retries
+    the rewrite (not the subprocess) if MiniMax returns syntactically invalid code."""
+    base_prompt = (
+        f"This Python technical analysis script failed. Fix it.\n\n"
+        f"ERROR:\n{error[:2000]}\n\n"
+        f"ORIGINAL SCRIPT:\n{script}\n\n"
+        f"REQUIREMENTS:\n{_SCRIPT_RULES}\n\n"
+        f"CRITICAL: Return ONLY valid Python code. "
+        f"No markdown fences. No explanation. "
+        f"Ensure all strings are terminated and all brackets/parentheses are closed."
+    )
+
+    prompt = base_prompt
+    last_fixed = script
+    for attempt in range(3):  # up to 3 rewrite attempts before returning whatever we have
+        fixed = await _call_rewriter(prompt)
+        try:
+            compile(fixed, "<string>", "exec")
+            return fixed  # syntactically valid — done
+        except SyntaxError as e:
+            logger.warning(f"_rewrite_script attempt {attempt + 1} produced invalid syntax: {e}")
+            last_fixed = fixed
+            # Feed the syntax error back so MiniMax can fix its own output
+            prompt = (
+                f"Your previous fix still has a syntax error: {e}\n\n"
+                f"Fix ONLY the syntax error. Return ONLY valid Python code, no fences:\n\n{fixed}"
+            )
+
+    logger.warning("_rewrite_script exhausted internal retries, returning last output as-is")
+    return last_fixed
 
 
 RUN_TA_SCRIPT_SCHEMA = {
@@ -169,19 +229,28 @@ async def run_ta_script(stock_code: str, script: str, timeframe: str = "5m", bar
     filename = f"ta_{stock_code}_{ts}_{short_id}.html"
     output_path = os.path.join(output_dir, filename)
 
-    current_script = script
+    # Pre-flight: let MiniMax M2.5 polish the agent-drafted script before first run
+    logger.info(f"run_ta_script pre-flight polish for {stock_code}")
+    current_script = await _polish_script(script)
     last_error = ""
 
     for attempt in range(1, _MAX_RETRIES + 1):
-        # Fast syntax check before spawning a subprocess
+        # Fast syntax check — if invalid, fix before spawning subprocess (doesn't burn an attempt)
         try:
             compile(current_script, "<string>", "exec")
         except SyntaxError as e:
             last_error = f"SyntaxError: {e}"
-            logger.warning(f"run_ta_script attempt {attempt} syntax error for {stock_code}: {e}")
-            if attempt < _MAX_RETRIES:
-                current_script = await _rewrite_script(current_script, last_error)
-            continue
+            logger.warning(f"run_ta_script pre-check syntax error on attempt {attempt} for {stock_code}: {e}")
+            current_script = await _rewrite_script(current_script, last_error)
+            # _rewrite_script validates internally; if still broken, subprocess will catch it
+            try:
+                compile(current_script, "<string>", "exec")
+            except SyntaxError as e2:
+                last_error = f"SyntaxError after rewrite: {e2}"
+                logger.warning(f"run_ta_script rewrite still invalid for {stock_code}: {e2}")
+                if attempt >= _MAX_RETRIES:
+                    break
+                continue
 
         wrapper = _make_wrapper_script(current_script)
 
@@ -203,12 +272,15 @@ async def run_ta_script(stock_code: str, script: str, timeframe: str = "5m", bar
 
         if result.returncode == 0 and os.path.exists(output_path):
             logger.info(f"run_ta_script succeeded for {stock_code} on attempt {attempt}")
-            return {
+            out = {
                 "file": output_path,
                 "message": "TA chart generated successfully. The interactive chart link appears automatically in the UI — do not include the file path in your response.",
                 "stock_code": stock_code,
                 "bars_used": len(bars_data),
             }
+            if result.stdout and result.stdout.strip():
+                out["text"] = result.stdout.strip()
+            return out
 
         last_error = result.stderr or result.stdout or "Script exited with non-zero code"
         logger.warning(f"run_ta_script attempt {attempt} failed for {stock_code}: {last_error[:200]}")
