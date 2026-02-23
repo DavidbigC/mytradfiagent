@@ -73,15 +73,23 @@ OUTPUT_PATH = _os.environ['TA_OUTPUT_PATH']
 """
 
 
+_SCRIPT_RULES = (
+    "The script has access to:\n"
+    "  DATA        — list of OHLCV dicts: [{ts, open, high, low, close, volume, amount}]\n"
+    "  OUTPUT_PATH — str, absolute path to write the Plotly .html file\n"
+    "Allowed imports: pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime.\n"
+    "MANDATORY Plotly rule: always call fig.update_xaxes(type='category') so the x-axis uses "
+    "discrete bar indices (no gaps for off-hours, weekends, or holidays)."
+)
+
+
 async def _rewrite_script(script: str, error: str) -> str:
     prompt = (
         f"The following Python script for technical analysis failed with this error:\n\n"
         f"ERROR:\n{error[:2000]}\n\n"
         f"SCRIPT:\n{script}\n\n"
-        f"Fix the script. Return ONLY the corrected Python code, no explanation, no markdown fences. "
-        f"The script has access to: DATA (list of OHLCV dicts with keys ts/open/high/low/close/volume/amount), "
-        f"OUTPUT_PATH (str, where to write the Plotly .html file). "
-        f"Allowed imports: pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime."
+        f"Fix the script. Return ONLY the corrected Python code, no explanation, no markdown fences.\n"
+        f"{_SCRIPT_RULES}"
     )
     response = await _client.chat.completions.create(
         model=_mm_model,
@@ -102,9 +110,10 @@ RUN_TA_SCRIPT_SCHEMA = {
         "description": (
             "Execute a Python script that computes technical analysis indicators using pandas-ta "
             "and generates an interactive Plotly chart saved as .html. "
-            "The script receives DATA (list of OHLCV dicts) and OUTPUT_PATH (where to save). "
+            "OHLCV data is fetched automatically at the requested timeframe before the script runs. "
             "If the script fails, it is automatically rewritten and retried up to 3 times. "
-            "Always call lookup_ta_strategy before this tool."
+            "Always call lookup_ta_strategy before this tool. "
+            "MANDATORY in every script: call fig.update_xaxes(type='category') to eliminate off-hours gaps."
         ),
         "parameters": {
             "type": "object",
@@ -117,13 +126,25 @@ RUN_TA_SCRIPT_SCHEMA = {
                     "type": "string",
                     "description": (
                         "Self-contained Python script. Must save a Plotly figure to OUTPUT_PATH as .html. "
-                        "DATA is pre-loaded as a list of dicts: [{ts, open, high, low, close, volume, amount}]. "
-                        "Use: import pandas as pd; df = pd.DataFrame(DATA)"
+                        "DATA is pre-loaded as a list of OHLCV dicts: [{ts, open, high, low, close, volume, amount}]. "
+                        "Start with: import pandas as pd; df = pd.DataFrame(DATA). "
+                        "ALWAYS include fig.update_xaxes(type='category') to skip off-hours gaps on the x-axis."
+                    ),
+                },
+                "timeframe": {
+                    "type": "string",
+                    "enum": ["5m", "1h", "1d", "1w"],
+                    "description": (
+                        "Bar timeframe for OHLCV data. Match to analysis horizon: "
+                        "'5m' intraday (default), '1h' swing, '1d' daily TA/MA200, '1w' multi-year trend."
                     ),
                 },
                 "bars": {
                     "type": "integer",
-                    "description": "Number of 5-min bars to fetch (default 500 ≈ 2 trading weeks). Max 1000.",
+                    "description": (
+                        "Number of bars to fetch (default 500). Max 2000. "
+                        "For MA200 on daily: use bars=300. For multi-year weekly: use bars=500."
+                    ),
                 },
             },
             "required": ["stock_code", "script"],
@@ -132,8 +153,8 @@ RUN_TA_SCRIPT_SCHEMA = {
 }
 
 
-async def run_ta_script(stock_code: str, script: str, bars: int = 500) -> dict:
-    ohlcv = await fetch_ohlcv(stock_code, bars=min(int(bars), 1000))
+async def run_ta_script(stock_code: str, script: str, timeframe: str = "5m", bars: int = 500) -> dict:
+    ohlcv = await fetch_ohlcv(stock_code, bars=min(int(bars), 2000), timeframe=timeframe)
     if "error" in ohlcv:
         return {"error": f"Failed to fetch OHLCV data: {ohlcv['error']}"}
 
