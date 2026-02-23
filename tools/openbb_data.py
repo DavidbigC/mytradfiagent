@@ -22,13 +22,10 @@ TOOL_TIMEOUT = 60
 def _get_obb():
     """Initialize OpenBB once and inject credentials from environment."""
     from openbb import obb  # deferred so import errors surface at call time
-    creds = {}
     if key := os.getenv("FRED_API_KEY"):
-        creds["fred_api_key"] = key
+        obb.user.credentials.fred_api_key = key
     if key := os.getenv("FMP_API_KEY"):
-        creds["fmp_api_key"] = key
-    if creds:
-        obb.user.credentials.update(creds)
+        obb.user.credentials.fmp_api_key = key
     return obb
 
 
@@ -37,8 +34,11 @@ def _call_openbb(command: str, params: dict) -> dict:
     obb = _get_obb()
     parts = command.strip().split(".")
     obj = obb
-    for part in parts:
-        obj = getattr(obj, part)
+    try:
+        for part in parts:
+            obj = getattr(obj, part)
+    except AttributeError:
+        raise AttributeError(f"Unknown command path '{command}' (failed at '{part}')")
 
     result = obj(**params)
 
