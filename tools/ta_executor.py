@@ -69,6 +69,24 @@ _builtins.__import__ = _safe_import
 DATA = _json.loads(_os.environ['TA_DATA'])
 OUTPUT_PATH = _os.environ['TA_OUTPUT_PATH']
 
+# Patch plotly to always embed JS inline — avoids slow external CDN requests
+import plotly.io as _pio
+_orig_write_html = _pio.write_html
+def _patched_write_html(fig, file, **kwargs):
+    kwargs.setdefault('include_plotlyjs', True)
+    return _orig_write_html(fig, file, **kwargs)
+_pio.write_html = _patched_write_html
+# Also patch the Figure method which delegates to pio.write_html
+try:
+    import plotly.basedatatypes as _bdt
+    _orig_fig_write_html = _bdt.BaseFigure.write_html
+    def _patched_fig_write_html(self, file, **kwargs):
+        kwargs.setdefault('include_plotlyjs', True)
+        return _orig_fig_write_html(self, file, **kwargs)
+    _bdt.BaseFigure.write_html = _patched_fig_write_html
+except Exception:
+    pass
+
 {user_script}
 """
 
