@@ -82,6 +82,8 @@ _SCRIPT_RULES = (
     "MANDATORY Plotly rules:\n"
     "  1. Always call fig.update_xaxes(type='category') — eliminates off-hours/weekend gaps.\n"
     "  2. Always use template='plotly_white' or 'simple_white' — light background, never dark.\n"
+    "  3. Always include a candlestick chart (go.Candlestick) as the first/top subplot using\n"
+    "     open/high/low/close from the DATA. NEVER produce a chart without price candlesticks.\n"
     "TIMESTAMP RULES (critical — violations cause runtime crashes):\n"
     "  - NEVER call .strftime() on a pd.Timestamp or datetime column — it raises an error.\n"
     "  - The ts column in DATA is already a pre-formatted string. Do NOT convert it with\n"
@@ -174,7 +176,8 @@ RUN_TA_SCRIPT_SCHEMA = {
             "OHLCV data is fetched automatically at the requested timeframe before the script runs. "
             "If the script fails, it is automatically rewritten and retried up to 3 times. "
             "Always call lookup_ta_strategy before this tool. "
-            "MANDATORY in every script: call fig.update_xaxes(type='category') to eliminate off-hours gaps."
+            "MANDATORY in every script: (1) include a candlestick (go.Candlestick) as the top subplot — never omit price, "
+            "(2) call fig.update_xaxes(type='category') to eliminate off-hours gaps."
         ),
         "parameters": {
             "type": "object",
