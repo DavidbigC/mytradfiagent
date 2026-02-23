@@ -1,5 +1,20 @@
 # Changes
 
+## 2026-02-23 — Add ta_strategies lookup/save/update tools with tests
+
+**What:** Created the TA strategy knowledge base tools (`lookup_ta_strategy`, `save_ta_strategy`, `update_ta_strategy`) backed by the `ta_strategies` Postgres table, plus full unit test coverage with mocked DB pool.
+
+**Files:**
+- `tools/ta_strategies.py` — created; implements three async tool functions and their JSON schemas
+- `tests/test_ta_strategies.py` — created; 5 pytest-asyncio tests covering found/not-found lookup, save, and update (found/not-found)
+
+**Details:**
+- Lookup uses FTS on `name` via `to_tsvector('simple', ...)` plus `= ANY(aliases)` fallback and exact case-insensitive name match (GIN index only covers `name` — alias search done at query time)
+- Save uses `INSERT ... ON CONFLICT (name) DO UPDATE` for upsert behaviour
+- Update builds dynamic SET clause from an `allowed` whitelist; detects `UPDATE 0` to return `not_found`
+- `parameters` JSONB field serialised via `json.dumps` before passing to asyncpg
+- Tests mock `get_pool` at the module level; all 5 pass
+
 ## 2026-02-22 — Codebase cleanup + server deployment doc
 
 **What:** Removed obsolete files and dead code; rewrote `switchingvps.md` into a comprehensive server deployment guide.
