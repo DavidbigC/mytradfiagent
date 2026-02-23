@@ -9,7 +9,7 @@ Environment variables:
 import asyncio
 import os
 from concurrent.futures import ProcessPoolExecutor
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 
 import asyncpg
 import baostock as bs
@@ -52,9 +52,12 @@ def _build_dsn() -> str:
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
 
-def _parse_ts(date_str: str, time_str: str) -> str:
-    h, m, s = time_str[8:10], time_str[10:12], time_str[12:14]
-    return f"{date_str} {h}:{m}:{s}+08:00"
+_CST = timezone(timedelta(hours=8))
+
+def _parse_ts(date_str: str, time_str: str) -> datetime:
+    y, mo, d = int(date_str[:4]), int(date_str[5:7]), int(date_str[8:10])
+    h, m, s = int(time_str[8:10]), int(time_str[10:12]), int(time_str[12:14])
+    return datetime(y, mo, d, h, m, s, tzinfo=_CST)
 
 
 # ── Worker (subprocess — has its own BaoStock login) ──────────────────────────
