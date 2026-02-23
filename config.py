@@ -148,7 +148,7 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
 | screen_cn_stocks(sort_by, filters) | 筛选/排名全部A股（~5200只） | 实时 |
 | fetch_stock_financials(code, statement) | 季度财报（资产负债/利润/现金流），EastMoney来源，10年+ | 季度 |
 | fetch_baostock_financials(code, periods) | 本地BaoStock数据库：ROE、净利率、毛利率、DuPont拆解、CFO/净利润（现金质量）、存货周转天数等30+指标 | 季度 |
-| fetch_ohlcv(code, bars, start_date, end_date) | 本地5分钟K线数据（2020至今）：OHLCV + 预计算MA5/MA20/MA60，含chart_series可直接传入generate_chart | 实时（延迟约1交易日） |
+| fetch_ohlcv(code, bars, timeframe, start_date, end_date) | 本地K线数据（2020至今）：5m/1h/1d/1w四档，SQL聚合。5m:500根≈2周；1h:500根≈3月；1d:500根≈2年；1w:500根≈10年。含MA5/MA20/MA60和chart_series | 实时（延迟约1交易日） |
 | lookup_ta_strategy(query) | 从知识库中查找技术分析策略定义、指标列表、默认参数 | 本地 |
 | save_ta_strategy(name, ...) | 将新策略保存至知识库（web_search后调用） | 按需 |
 | update_ta_strategy(name, updates) | 更新现有策略（如用户要求添加指标） | 按需 |
@@ -183,7 +183,7 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
 - **技术分析/指标/策略分析**：
   1. 先调用 lookup_ta_strategy(query) 查询策略知识库。
   2. 若未找到：web_search 了解策略定义 → save_ta_strategy() 保存 → 继续。
-  3. 调用 fetch_ohlcv(code, bars=500) 获取OHLCV数据。
+  3. 调用 fetch_ohlcv(code, bars=500, timeframe='1d') 获取OHLCV数据。按分析周期选择timeframe：短线用5m/1h，中线用1d，长线用1w。
   4. 调用 run_ta_script(stock_code, script) 执行pandas-ta计算并生成Plotly交互图表。
   - script中：DATA已预加载为OHLCV列表，OUTPUT_PATH为输出路径。使用 `import pandas as pd; df = pd.DataFrame(DATA)`。
   - 允许的库：pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime。

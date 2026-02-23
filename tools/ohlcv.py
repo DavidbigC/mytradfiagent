@@ -1,4 +1,11 @@
-"""Fetch 5-minute OHLCV bars from the local marketdata DB for technical analysis."""
+"""Fetch OHLCV bars from the local marketdata DB for technical analysis.
+
+Supports multiple timeframes via SQL aggregation:
+  5m  — raw 5-minute bars (default)
+  1h  — hourly   (aggregated server-side, ~3 months per 500 bars)
+  1d  — daily    (aggregated server-side, ~2 years per 500 bars)
+  1w  — weekly   (aggregated server-side, ~10 years per 500 bars)
+"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -9,16 +16,25 @@ logger = logging.getLogger(__name__)
 
 _CST = timezone(timedelta(hours=8))
 
+# Maps timeframe param → date_trunc unit (None = no aggregation)
+_TRUNC = {"5m": None, "1h": "hour", "1d": "day", "1w": "week"}
+# Timestamp format for each timeframe
+_TS_FMT = {"5m": "%Y-%m-%d %H:%M", "1h": "%Y-%m-%d %H:%M", "1d": "%Y-%m-%d", "1w": "%Y-%m-%d"}
+
 FETCH_OHLCV_SCHEMA = {
     "type": "function",
     "function": {
         "name": "fetch_ohlcv",
         "description": (
-            "Fetch 5-minute OHLCV (candlestick) bars for a Chinese A-share stock from the local "
-            "market database. Use for technical analysis, price trend charts, support/resistance levels, "
-            "or intraday pattern analysis. Returns OHLCV bars plus pre-computed MA5/MA20/MA60 on close "
-            "price. Data is available from 2020 onward. Timestamps are in CST (UTC+8). "
-            "After fetching, use generate_chart with the returned chart_series to visualise the data."
+            "Fetch OHLCV (candlestick) bars for a Chinese A-share stock from the local market database. "
+            "Use for technical analysis, price trends, support/resistance, and TA script data. "
+            "Supports multiple timeframes via server-side SQL aggregation — choose based on the analysis horizon:\n"
+            "  timeframe='5m'  → intraday (default). 500 bars ≈ 2 trading weeks.\n"
+            "  timeframe='1h'  → hourly. 500 bars ≈ 3 months.\n"
+            "  timeframe='1d'  → daily. 500 bars ≈ 2 years. Use for daily MA, trend, longer TA.\n"
+            "  timeframe='1w'  → weekly. 500 bars ≈ 10 years. Use for multi-year trend analysis.\n"
+            "Data available from 2020 onward. Timestamps in CST (UTC+8). "
+            "Returns bars + pre-computed MA5/MA20/MA60 on close price."
         ),
         "parameters": {
             "type": "object",
@@ -30,8 +46,18 @@ FETCH_OHLCV_SCHEMA = {
                 "bars": {
                     "type": "integer",
                     "description": (
-                        "Number of most-recent 5-min bars to return (default 200 ≈ ~1 trading week). "
-                        "Max 1000. Increase for longer-term trend analysis."
+                        "Number of most-recent bars to return (default 200). Max 1000. "
+                        "For daily TA indicators like MA200, use bars=250. "
+                        "For multi-year weekly charts, use bars=500."
+                    ),
+                },
+                "timeframe": {
+                    "type": "string",
+                    "enum": ["5m", "1h", "1d", "1w"],
+                    "description": (
+                        "Bar timeframe. '5m' = raw 5-min bars (default). "
+                        "'1h' hourly, '1d' daily, '1w' weekly — all aggregated in SQL. "
+                        "Use '1d' or '1w' for any longer-term TA."
                     ),
                 },
                 "start_date": {
@@ -62,6 +88,7 @@ def _ma(values: list[float], n: int) -> list[float | None]:
 async def fetch_ohlcv(
     stock_code: str,
     bars: int = 200,
+    timeframe: str = "5m",
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict:
@@ -69,74 +96,122 @@ async def fetch_ohlcv(
     if len(code) != 6 or not code.isdigit():
         return {"error": f"Invalid stock code '{code}'. Must be 6 digits e.g. '600036'."}
 
+    if timeframe not in _TRUNC:
+        return {"error": f"Invalid timeframe '{timeframe}'. Must be one of: 5m, 1h, 1d, 1w."}
+
     bars = min(max(int(bars), 1), 1000)
+    trunc_unit = _TRUNC[timeframe]
+    ts_fmt = _TS_FMT[timeframe]
 
     try:
         pool = await get_marketdata_pool()
 
-        if start_date or end_date:
-            # Date-range query — fetch all matching bars, newest first, then reverse
-            conditions = ["code = $1"]
-            params: list = [code]
-            if start_date:
-                conditions.append(f"ts >= ${len(params) + 1}::timestamptz")
-                params.append(start_date)
-            if end_date:
-                conditions.append(f"ts < (${len(params) + 1}::date + interval '1 day')::timestamptz")
-                params.append(end_date)
-            where = " AND ".join(conditions)
-            rows = await pool.fetch(
-                f"SELECT ts, open, high, low, close, volume, amount "
-                f"FROM ohlcv_5m WHERE {where} ORDER BY ts ASC LIMIT ${ len(params) + 1}",
-                *params, bars,
-            )
+        if trunc_unit is None:
+            # ── Raw 5-minute bars (original behaviour) ──────────────────────
+            if start_date or end_date:
+                conditions = ["code = $1"]
+                params: list = [code]
+                if start_date:
+                    conditions.append(f"ts >= ${len(params) + 1}::timestamptz")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append(f"ts < (${len(params) + 1}::date + interval '1 day')::timestamptz")
+                    params.append(end_date)
+                where = " AND ".join(conditions)
+                rows = await pool.fetch(
+                    f"SELECT ts, open, high, low, close, volume, amount "
+                    f"FROM ohlcv_5m WHERE {where} ORDER BY ts ASC LIMIT ${len(params) + 1}",
+                    *params, bars,
+                )
+            else:
+                rows = await pool.fetch(
+                    "SELECT ts, open, high, low, close, volume, amount "
+                    "FROM ohlcv_5m WHERE code = $1 ORDER BY ts DESC LIMIT $2",
+                    code, bars,
+                )
+                rows = list(reversed(rows))
         else:
-            # Most-recent N bars
-            rows = await pool.fetch(
-                "SELECT ts, open, high, low, close, volume, amount "
-                "FROM ohlcv_5m WHERE code = $1 ORDER BY ts DESC LIMIT $2",
-                code, bars,
+            # ── Aggregated bars (1h / 1d / 1w) ──────────────────────────────
+            # open  = first bar's open in the bucket  (array_agg ORDER BY ts ASC)[1]
+            # close = last  bar's close in the bucket (array_agg ORDER BY ts DESC)[1]
+            # high/low/volume/amount aggregated normally
+            agg_select = (
+                "date_trunc($2, ts AT TIME ZONE 'Asia/Shanghai') AS bucket, "
+                "(array_agg(open  ORDER BY ts ASC))[1]  AS open, "
+                "MAX(high)                               AS high, "
+                "MIN(low)                                AS low, "
+                "(array_agg(close ORDER BY ts DESC))[1] AS close, "
+                "SUM(volume)                             AS volume, "
+                "SUM(amount)                             AS amount"
             )
-            rows = list(reversed(rows))
+
+            if start_date or end_date:
+                conditions = ["code = $1"]
+                params = [code, trunc_unit]
+                if start_date:
+                    conditions.append(f"ts >= ${len(params) + 1}::timestamptz")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append(f"ts < (${len(params) + 1}::date + interval '1 day')::timestamptz")
+                    params.append(end_date)
+                where = " AND ".join(conditions)
+                rows = await pool.fetch(
+                    f"SELECT {agg_select} FROM ohlcv_5m WHERE {where} "
+                    f"GROUP BY bucket ORDER BY bucket ASC LIMIT ${len(params) + 1}",
+                    *params, bars,
+                )
+            else:
+                rows = await pool.fetch(
+                    f"SELECT {agg_select} FROM ohlcv_5m WHERE code = $1 "
+                    f"GROUP BY bucket ORDER BY bucket DESC LIMIT $3",
+                    code, trunc_unit, bars,
+                )
+                rows = list(reversed(rows))
 
     except Exception as e:
-        logger.error(f"fetch_ohlcv failed for {code}: {e}")
+        logger.error(f"fetch_ohlcv failed for {code} ({timeframe}): {e}")
         return {"error": f"DB query failed: {e}"}
 
     if not rows:
         return {"stock_code": code, "bars": [], "message": "No OHLCV data found for this stock/date range."}
 
-    # Convert to CST and build bar list
+    # ── Build bar list ───────────────────────────────────────────────────────
+    ts_key = "bucket" if trunc_unit else "ts"
     bar_list = []
     for r in rows:
-        ts_cst = r["ts"].astimezone(_CST)
+        raw_ts = r[ts_key]
+        # 5m bars: tz-aware (TIMESTAMPTZ) → convert to CST
+        # aggregated: naive datetime from AT TIME ZONE (already CST)
+        if trunc_unit is None:
+            ts_str = raw_ts.astimezone(_CST).strftime(ts_fmt)
+        else:
+            ts_str = raw_ts.strftime(ts_fmt)
+
         bar_list.append({
-            "ts": ts_cst.strftime("%Y-%m-%d %H:%M"),
+            "ts":     ts_str,
             "open":   round(float(r["open"]),   3),
             "high":   round(float(r["high"]),   3),
             "low":    round(float(r["low"]),    3),
             "close":  round(float(r["close"]),  3),
             "volume": int(r["volume"]),
-            "amount": round(float(r["amount"]) / 1e4, 2),  # convert to 万元
+            "amount": round(float(r["amount"]) / 1e4, 2),  # 万元
         })
 
-    closes = [b["close"] for b in bar_list]
-    volumes = [b["volume"] for b in bar_list]
-    timestamps = [b["ts"] for b in bar_list]
+    closes     = [b["close"]  for b in bar_list]
+    volumes    = [b["volume"] for b in bar_list]
+    timestamps = [b["ts"]     for b in bar_list]
 
     ma5  = _ma(closes, 5)
     ma20 = _ma(closes, 20)
     ma60 = _ma(closes, 60)
 
-    # Summary stats
     latest = bar_list[-1]
     first  = bar_list[0]
-    period_high = max(b["high"] for b in bar_list)
-    period_low  = min(b["low"]  for b in bar_list)
-    avg_volume  = round(sum(volumes) / len(volumes))
+    period_high      = max(b["high"] for b in bar_list)
+    period_low       = min(b["low"]  for b in bar_list)
+    avg_volume       = round(sum(volumes) / len(volumes))
     price_change_pct = round((latest["close"] - first["open"]) / first["open"] * 100, 2)
 
-    # Chart-ready series (non-None MA values only, aligned by timestamp)
     def _series(name, values):
         xs, ys = [], []
         for ts, v in zip(timestamps, values):
@@ -147,15 +222,16 @@ async def fetch_ohlcv(
 
     chart_series = [
         _series("收盘价", closes),
-        _series("MA5",  ma5),
-        _series("MA20", ma20),
-        _series("MA60", ma60),
+        _series("MA5",   ma5),
+        _series("MA20",  ma20),
+        _series("MA60",  ma60),
     ]
 
     return {
         "stock_code": code,
-        "bar_count": len(bar_list),
-        "period": {"from": bar_list[0]["ts"], "to": bar_list[-1]["ts"]},
+        "timeframe":  timeframe,
+        "bar_count":  len(bar_list),
+        "period":     {"from": bar_list[0]["ts"], "to": bar_list[-1]["ts"]},
         "summary": {
             "latest_close":       latest["close"],
             "period_high":        period_high,
@@ -166,10 +242,11 @@ async def fetch_ohlcv(
             "latest_ma20":        ma20[-1],
             "latest_ma60":        ma60[-1],
         },
-        "bars": bar_list,
+        "bars":         bar_list,
         "chart_series": chart_series,
         "note": (
-            "Timestamps in CST (UTC+8). amount is in 万元. "
-            "Use chart_series with generate_chart (type='line') to plot price + MAs."
+            f"Timeframe: {timeframe}. Timestamps in CST (UTC+8). amount in 万元. "
+            "Use chart_series with generate_chart (type='line') to plot price + MAs, "
+            "or pass bars to run_ta_script for pandas-ta indicators."
         ),
     }
