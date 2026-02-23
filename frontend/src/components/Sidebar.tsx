@@ -34,17 +34,17 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [showAdmin, setShowAdmin] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const [shareOpenId, setShareOpenId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const isAdmin = user?.username === "davidc";
 
   function handleShareToggle(conv: Conversation) {
     onShare(conv.id, !conv.is_public);
   }
 
-  function handleCopy(url: string) {
+  function handleCopy(convId: string, url: string) {
     navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedId(convId);
+      setTimeout(() => setCopiedId(null), 2000);
     });
   }
 
@@ -122,9 +122,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                       />
                       <button
                         className="share-copy-btn"
-                        onClick={() => handleCopy(`${window.location.origin}/share/${c.share_token}`)}
+                        onClick={() => handleCopy(c.id, `${window.location.origin}/share/${c.share_token}`)}
                       >
-                        {copied ? (lang === "zh" ? "已复制" : "Copied!") : (lang === "zh" ? "复制" : "Copy")}
+                        {copiedId === c.id ? (lang === "zh" ? "已复制" : "Copied!") : (lang === "zh" ? "复制" : "Copy")}
                       </button>
                     </div>
                   )}
