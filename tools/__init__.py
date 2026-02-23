@@ -33,6 +33,7 @@ from tools.cn_eastmoney import (
 from tools.trade_analyzer import analyze_trade_opportunity, run_hypothesis_debate, ANALYZE_TRADE_SCHEMA
 from tools.financials_db import fetch_baostock_financials, FETCH_BAOSTOCK_FINANCIALS_SCHEMA
 from tools.ohlcv import fetch_ohlcv, FETCH_OHLCV_SCHEMA
+from tools.openbb_data import fetch_global_market_data, FETCH_GLOBAL_MARKET_DATA_SCHEMA
 
 TOOL_SCHEMAS = [
     LOOKUP_DATA_SOURCES_SCHEMA,
@@ -62,6 +63,7 @@ TOOL_SCHEMAS = [
     FETCH_DIVIDEND_HISTORY_SCHEMA,
     FETCH_BAOSTOCK_FINANCIALS_SCHEMA,
     FETCH_OHLCV_SCHEMA,
+    FETCH_GLOBAL_MARKET_DATA_SCHEMA,
     # ANALYZE_TRADE_SCHEMA excluded — only reachable via the debate button, not the agent loop
 ]
 
@@ -94,6 +96,7 @@ TOOL_MAP = {
     "analyze_trade_opportunity": analyze_trade_opportunity,
     "fetch_baostock_financials": fetch_baostock_financials,
     "fetch_ohlcv": fetch_ohlcv,
+    "fetch_global_market_data": fetch_global_market_data,
 }
 
 
