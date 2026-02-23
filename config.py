@@ -110,6 +110,8 @@ Tool → URL mapping:
   - analyze_trade_opportunity → https://data.eastmoney.com/bbsj/
   - scrape_webpage on guba.eastmoney.com → https://guba.eastmoney.com/
   - lookup_data_sources → use the URL that was looked up
+  - run_ta_script → https://pypi.org/project/pandas-ta/
+  - lookup_ta_strategy / save_ta_strategy / update_ta_strategy → (internal knowledge base, no citation needed)
 Number references in order of first appearance."""
 
 
@@ -146,6 +148,10 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
 | fetch_stock_financials(code, statement) | 季度财报（资产负债/利润/现金流），EastMoney来源，10年+ | 季度 |
 | fetch_baostock_financials(code, periods) | 本地BaoStock数据库：ROE、净利率、毛利率、DuPont拆解、CFO/净利润（现金质量）、存货周转天数等30+指标 | 季度 |
 | fetch_ohlcv(code, bars, start_date, end_date) | 本地5分钟K线数据（2020至今）：OHLCV + 预计算MA5/MA20/MA60，含chart_series可直接传入generate_chart | 实时（延迟约1交易日） |
+| lookup_ta_strategy(query) | 从知识库中查找技术分析策略定义、指标列表、默认参数 | 本地 |
+| save_ta_strategy(name, ...) | 将新策略保存至知识库（web_search后调用） | 按需 |
+| update_ta_strategy(name, updates) | 更新现有策略（如用户要求添加指标） | 按需 |
+| run_ta_script(stock_code, script, bars) | 执行pandas-ta脚本生成Plotly交互图表，失败自动重试3次 | 按需 |
 | fetch_top_shareholders(code, periods) | 十大流通股东及持股变动 | 季度披露（滞后1–2月） |
 | fetch_company_report(code, type) | 年报/季报原文 + PDF（Sina Finance） | 季度 |
 | fetch_sina_profit_statement(code, year) | 详细利润表含利息收入/费用明细 | 年度 |
@@ -173,7 +179,15 @@ INTENT: finance   — 涉及股票、基金、债券、财务数据、宏观经�
 - **A股行情/排名**：用 fetch_multiple_cn_stocks 或 screen_cn_stocks，切勿用 web_search。
 - **深度单股分析**：并行调用 fetch_stock_financials + fetch_baostock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history，同时 dispatch_subagents 抓取股吧情绪。
 - **深度财务比率分析**（ROE分解/现金质量/运营效率）：优先使用 fetch_baostock_financials，它包含 DuPont拆解（dupont_roe/asset_turn/ebit_togr）、CFO/净利润现金质量（cfo_to_np）、存货周转天数（inv_turn_days）等 EastMoney API 没有的指标。
-- **技术分析/K线图/趋势/支撑压力**：用 fetch_ohlcv 获取5分钟K线（默认200根≈1周），再用 generate_chart 画图。返回的 chart_series 可直接作为 series 参数传入。bars=500 约2周，bars=1000 约1个月。
+- **技术分析/指标/策略分析**：
+  1. 先调用 lookup_ta_strategy(query) 查询策略知识库。
+  2. 若未找到：web_search 了解策略定义 → save_ta_strategy() 保存 → 继续。
+  3. 调用 fetch_ohlcv(code, bars=500) 获取OHLCV数据。
+  4. 调用 run_ta_script(stock_code, script) 执行pandas-ta计算并生成Plotly交互图表。
+  - script中：DATA已预加载为OHLCV列表，OUTPUT_PATH为输出路径。使用 `import pandas as pd; df = pd.DataFrame(DATA)`。
+  - 允许的库：pandas, pandas_ta, plotly, numpy, json, os, pathlib, math, datetime。
+  - 若用户要求修改策略：调用 update_ta_strategy(name, updates)。
+  - 简单价格走势图（无指标）：仍可用 fetch_ohlcv + generate_chart（更快）。
 - **买卖建议**：用 analyze_trade_opportunity，切勿手动拼凑。
 - **任何资金流向数据**：切勿使用 web_search，始终使用对应的专用工具。
 
