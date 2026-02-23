@@ -72,7 +72,10 @@ async def load_catalog(pool: asyncpg.Pool) -> list[str]:
     df = ak.fund_name_em()
     rows = []
     for _, r in df.iterrows():
-        code = str(r["基金代码"]).strip().zfill(6)
+        raw_code = str(r.get("基金代码") or "").strip()
+        if not raw_code:
+            continue
+        code = raw_code.zfill(6)
         rows.append((
             code,
             str(r.get("基金简称") or ""),
@@ -101,10 +104,11 @@ async def load_managers(pool: asyncpg.Pool):
     today = date.today()
     rows = []
     for _, r in df.iterrows():
-        code = str(r.get("现任基金代码") or "").strip().zfill(6)
+        raw_code = str(r.get("现任基金代码") or "").strip()
         name = str(r.get("姓名") or "").strip()
-        if code and name:
-            rows.append((code, name, today))
+        if not raw_code or not name:
+            continue
+        rows.append((raw_code.zfill(6), name, today))
     async with pool.acquire() as conn:
         existing = {r["code"] for r in await conn.fetch("SELECT code FROM funds")}
         valid = [r for r in rows if r[0] in existing]
