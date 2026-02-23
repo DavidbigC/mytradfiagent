@@ -1242,3 +1242,18 @@
 - Debate conversations created with mode='debate' upfront (not inferred from title)
 - Mode picker only triggers in debate conversations with existing messages; first message in any conversation sends directly
 - Cancel in mode picker restores the typed message to input
+
+## 2026-02-23 — Async OHLCV ingest with rich progress
+
+**What:** Rewrote ingest_ohlcv.py to use asyncio + ProcessPoolExecutor for parallel BaoStock fetching and asyncpg for async DB writes, with a rich progress bar.
+
+**Files:**
+- `data/ingest_ohlcv.py` — rewritten: asyncio main loop, ProcessPoolExecutor workers (each with own BaoStock login), asyncpg pool replaces psycopg2, rich Progress bar with ETA/count/rows
+- `requirements.txt` — added `rich`
+
+**Details:**
+- CONCURRENCY env var (default 3) controls parallel BaoStock workers; each subprocess has its own bs.login() session
+- Main process only logs into BaoStock to fetch the stock list, then logs out; workers handle all data fetching
+- Removed time.sleep(0.1) per stock; rate limiting now implicit via semaphore + process count
+- Progress bar shows: N/M complete, bar, %, elapsed, ETA, current stock + row count
+- ON CONFLICT DO NOTHING preserved for safe re-runs after interruption
