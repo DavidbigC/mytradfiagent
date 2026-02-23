@@ -97,31 +97,31 @@ forex, crypto, ETFs, options, SEC filings, and financial news.
 ━━ COMMAND REFERENCE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EQUITY (global stocks — use fetch_cn_stock_data for A-shares)
-  equity.price.historical   — OHLCV history. params: symbol, start_date, end_date, interval ("1d"/"1wk"), provider ("yfinance")
-  equity.price.quote        — Live quote + fundamentals. params: symbol, provider ("yfinance"/"fmp")
+  equity.price.historical   — OHLCV history. params: symbol, start_date, end_date, interval ("1d"/"1wk"), provider ("fmp")
+  equity.price.quote        — Live quote + fundamentals. params: symbol, provider ("fmp")
   equity.fundamental.income — Income statement. params: symbol, period ("annual"/"quarterly"), provider ("fmp")
   equity.fundamental.balance— Balance sheet. params: symbol, period, provider ("fmp")
   equity.fundamental.cash   — Cash flow statement. params: symbol, period, provider ("fmp")
   equity.fundamental.filings— SEC filings list. params: symbol, form_type ("10-K"/"10-Q"/"8-K"), provider ("sec"/"fmp")
-  equity.fundamental.overview — Company overview/profile. params: symbol, provider ("fmp"/"yfinance")
+  equity.fundamental.overview — Company overview/profile. params: symbol, provider ("fmp")
   equity.fundamental.metrics — Key financial ratios/metrics. params: symbol, period, provider ("fmp")
-  equity.fundamental.dividends— Dividend history. params: symbol, provider ("fmp"/"yfinance")
+  equity.fundamental.dividends— Dividend history. params: symbol, provider ("fmp")
   equity.search             — Search stocks by name. params: query, provider ("sec"/"fmp")
   equity.screener.screen    — Screen stocks by criteria. params: provider ("fmp"), metric filters
 
 MACRO / ECONOMY
-  economy.gdp.real          — Real GDP by country. params: country ("united_states"/"china"/etc.), start_date, end_date, provider ("oecd"/"fred")
+  economy.gdp.real          — Real GDP by country. params: country ("united_states"/"china"/etc.), start_date, end_date, provider ("oecd")
   economy.gdp.nominal       — Nominal GDP. params: country, provider ("oecd")
   economy.cpi               — Inflation / CPI. params: country, start_date, end_date, frequency ("monthly"/"annual"), provider ("fred"/"oecd")
   economy.calendar          — Economic events calendar. params: start_date, end_date, provider ("fmp")
-  economy.unemployment      — Unemployment rate. params: country, start_date, end_date, provider ("oecd"/"fred")
+  economy.unemployment      — Unemployment rate. params: country, start_date, end_date, provider ("oecd")
   economy.composite_leading_indicator — CLI leading indicator by country. params: country, provider ("oecd")
   economy.short_interest    — Short interest data. params: symbol, provider ("finra")
 
 FIXED INCOME / RATES
-  fixedincome.government.treasury_rates — US treasury rates (3m/6m/1y/2y/5y/10y/30y). params: start_date, end_date, provider ("fred")
-  fixedincome.government.yield_curve    — Yield curve snapshot by date. params: date (YYYY-MM-DD), country ("us"), provider ("fred")
-  fixedincome.government.tips_yields    — TIPS (inflation-protected) yields. params: maturity ("5y"/"10y"/"30y"), start_date, end_date, provider ("fred")
+  fixedincome.government.treasury_rates — US treasury rates (3m/6m/1y/2y/5y/10y/30y). params: start_date, end_date, provider ("federal_reserve"/"fmp")
+  fixedincome.government.yield_curve    — Yield curve snapshot by date. params: date (YYYY-MM-DD), country ("us"), provider ("federal_reserve"/"fmp")
+  fixedincome.government.tips_yields    — TIPS (inflation-protected) yields. params: maturity ("5y"/"10y"/"30y"), start_date, end_date, provider ("federal_reserve")
   fixedincome.government.treasury_auctions — Treasury auction data. params: start_date, end_date, provider ("government_us")
   fixedincome.corporate.ice_bofa        — ICE BofA bond indices. params: start_date, end_date, index_type, provider ("fred")
   fixedincome.corporate.moody           — Moody's bond indices. params: start_date, end_date, provider ("fred")
@@ -129,23 +129,23 @@ FIXED INCOME / RATES
   fixedincome.spreads.treasury_effr     — T-Bill minus Fed Funds Rate spread. params: maturity, start_date, end_date, provider ("fred")
 
 CURRENCY / FOREX
-  currency.price.historical — Exchange rate history. params: symbol ("EURUSD"/"USDCNY"/"USDJPY"), start_date, end_date, provider ("yfinance"/"fmp")
+  currency.price.historical — Exchange rate history. params: symbol ("EURUSD"/"USDCNY"/"USDJPY"), start_date, end_date, provider ("fmp")
   currency.snapshots        — Live rate snapshot for many pairs. params: base ("USD"), provider ("fmp")
   currency.search           — Search available currency pairs. params: provider ("fmp")
 
 CRYPTOCURRENCY
-  crypto.price.historical   — Crypto OHLCV. params: symbol ("BTC-USD"/"ETH-USD"), start_date, end_date, provider ("yfinance"/"fmp")
+  crypto.price.historical   — Crypto OHLCV. params: symbol ("BTC-USD"/"ETH-USD"), start_date, end_date, provider ("fmp")
   crypto.search             — Available crypto pairs. params: query, provider ("fmp")
 
 ETF
-  etf.historical            — ETF price history. params: symbol, start_date, end_date, provider ("yfinance"/"fmp")
+  etf.historical            — ETF price history. params: symbol, start_date, end_date, provider ("fmp")
   etf.info                  — ETF description, AUM, expense ratio. params: symbol, provider ("fmp")
   etf.holdings              — ETF top holdings. params: symbol, provider ("fmp")
   etf.price_performance     — Returns over multiple periods. params: symbol, provider ("fmp")
   etf.search                — Search ETFs by name/keyword. params: query, provider ("fmp")
 
 INDEX
-  index.historical          — Index OHLCV history. params: symbol ("^GSPC"/"^DJI"/"^IXIC"/"^HSI"), start_date, end_date, provider ("yfinance"/"fmp")
+  index.historical          — Index OHLCV history. params: symbol ("^GSPC"/"^DJI"/"^IXIC"/"^HSI"), start_date, end_date, provider ("fmp")
   index.constituents        — Index member stocks. params: index ("sp500"/"nasdaq100"/"dowjones"), provider ("fmp")
 
 DERIVATIVES / OPTIONS
