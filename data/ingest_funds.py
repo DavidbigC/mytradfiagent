@@ -118,3 +118,64 @@ async def load_managers(pool: asyncpg.Pool):
             ON CONFLICT DO NOTHING
         """, valid)
     print(f"  Inserted {len(valid):,} manager-fund associations")
+
+
+# ── 3. ETF price history ──────────────────────────────────────────────────────
+
+def _fetch_etf_price(code: str) -> tuple[str, list]:
+    try:
+        df = ak.fund_etf_hist_em(
+            symbol=code, period="daily",
+            start_date=PRICE_START, end_date=PRICE_END, adjust="",
+        )
+        rows = []
+        for _, r in df.iterrows():
+            try:
+                d = r["日期"] if isinstance(r["日期"], date) else date.fromisoformat(str(r["日期"]))
+                rows.append((
+                    code, d,
+                    float(r["开盘"])   if r["开盘"]   else None,
+                    float(r["最高"])   if r["最高"]   else None,
+                    float(r["最低"])   if r["最低"]   else None,
+                    float(r["收盘"])   if r["收盘"]   else None,
+                    int(float(r["成交量"])) if r["成交量"] else None,
+                    float(r["成交额"]) if r["成交额"] else None,
+                    float(r["换手率"]) if r["换手率"] else None,
+                    None,  # premium_discount_pct — not in this endpoint
+                ))
+            except Exception:
+                continue
+        return code, rows
+    except Exception:
+        return code, []
+
+
+async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str]):
+    loop = asyncio.get_event_loop()
+    sem = asyncio.Semaphore(CONCURRENCY)
+    total_rows = 0
+    with Progress(
+        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+        TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
+        TimeRemainingColumn(), TextColumn("[cyan]{task.description}"),
+        refresh_per_second=4,
+    ) as progress:
+        task = progress.add_task("ETF prices...", total=len(etf_codes))
+        with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+            async def process_one(code: str):
+                nonlocal total_rows
+                async with sem:
+                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_price, code)
+                    if rows:
+                        async with pool.acquire() as conn:
+                            await conn.executemany("""
+                                INSERT INTO fund_price
+                                  (fund_code, date, open, high, low, close, volume, amount, turnover_rate, premium_discount_pct)
+                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                                ON CONFLICT DO NOTHING
+                            """, rows)
+                        total_rows += len(rows)
+                    progress.update(task, advance=1,
+                        description=f"{code_out} {len(rows)} rows ({total_rows:,} total)")
+            await asyncio.gather(*[process_one(c) for c in etf_codes])
+    print(f"  ETF prices: {total_rows:,} rows")
