@@ -182,3 +182,94 @@ async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str]):
                         description=f"{code_out} {len(rows)} rows ({total_rows:,} total)")
             await asyncio.gather(*[process_one(c) for c in etf_codes])
     print(f"  ETF prices: {total_rows:,} rows. {len(errors)} codes returned no data.")
+
+
+# ── 4. NAV ────────────────────────────────────────────────────────────────────
+
+def _fetch_etf_nav(code: str) -> tuple[str, list]:
+    try:
+        df = ak.fund_etf_fund_info_em(fund=code, start_date=PRICE_START, end_date=PRICE_END)
+        rows = []
+        for _, r in df.iterrows():
+            try:
+                d = r["净值日期"] if isinstance(r["净值日期"], date) else date.fromisoformat(str(r["净值日期"]))
+                rows.append((
+                    code, d,
+                    float(r["单位净值"])  if r.get("单位净值")  else None,
+                    float(r["累计净值"])  if r.get("累计净值")  else None,
+                    _parse_rate(r.get("日增长率")),
+                ))
+            except Exception:
+                continue
+        return code, rows
+    except Exception:
+        return code, []
+
+
+async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str]):
+    """Load NAV history for all ETFs from fund_etf_fund_info_em."""
+    loop = asyncio.get_running_loop()
+    sem = asyncio.Semaphore(CONCURRENCY)
+    total_rows = 0
+    errors: list[str] = []
+    with Progress(
+        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+        TaskProgressColumn(), TimeElapsedColumn(),
+        TextColumn("[cyan]{task.description}"), refresh_per_second=4,
+    ) as progress:
+        task = progress.add_task("ETF NAV...", total=len(etf_codes))
+        with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+            async def process_one(code: str):
+                nonlocal total_rows
+                async with sem:
+                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_nav, code)
+                    if rows:
+                        async with pool.acquire() as conn:
+                            await conn.executemany("""
+                                INSERT INTO fund_nav (fund_code, date, unit_nav, accum_nav, daily_return_pct)
+                                VALUES ($1,$2,$3,$4,$5)
+                                ON CONFLICT DO NOTHING
+                            """, rows)
+                        total_rows += len(rows)
+                    else:
+                        errors.append(code_out)
+                    progress.update(task, advance=1,
+                        description=f"{code_out} {len(rows)} rows ({total_rows:,} total)")
+            await asyncio.gather(*[process_one(c) for c in etf_codes])
+    print(f"  ETF NAVs: {total_rows:,} rows. {len(errors)} codes returned no data.")
+
+
+async def load_open_fund_navs(pool: asyncpg.Pool):
+    """Bulk load today's NAV for all open-ended funds (single API call).
+
+    fund_open_fund_daily_em returns date-prefixed NAV columns, e.g.
+    '2026-02-13-单位净值' and '2026-02-13-累计净值'. We detect the most
+    recent date prefix from the column names at runtime.
+    """
+    print("Fetching open fund NAV bulk...")
+    df = ak.fund_open_fund_daily_em()
+    # Detect date-prefixed NAV columns (format: YYYY-MM-DD-单位净值)
+    unit_col = next((c for c in df.columns if c.endswith("-单位净值")), None)
+    accum_col = next((c for c in df.columns if c.endswith("-累计净值")), None)
+    today = date.today()
+    rows = []
+    for _, r in df.iterrows():
+        raw_code = str(r.get("基金代码") or "").strip()
+        if not raw_code:
+            continue
+        try:
+            rows.append((
+                raw_code.zfill(6), today,
+                float(r[unit_col])  if unit_col and r.get(unit_col)  else None,
+                float(r[accum_col]) if accum_col and r.get(accum_col) else None,
+                _parse_rate(r.get("日增长率")),
+            ))
+        except Exception:
+            continue
+    async with pool.acquire() as conn:
+        await conn.executemany("""
+            INSERT INTO fund_nav (fund_code, date, unit_nav, accum_nav, daily_return_pct)
+            VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT DO NOTHING
+        """, rows)
+    print(f"  Open fund NAV: {len(rows):,} rows")
