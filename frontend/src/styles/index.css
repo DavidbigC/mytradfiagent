@@ -217,10 +217,8 @@ body,
 .sidebar {
   width: 260px;
   min-width: 260px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-right: 1px solid var(--glass-border);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -310,23 +308,141 @@ body,
   color: var(--text-primary);
 }
 
+.conv-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.conv-share,
 .conv-delete {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 1.1rem;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 3px 5px;
+  border-radius: 4px;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
-.conversation-item:hover .conv-delete {
+.conv-share.active {
+  opacity: 0.6;
+  color: var(--accent);
+}
+
+.conversation-item:hover .conv-share,
+.conversation-item:hover .conv-delete,
+.conversation-item.share-open .conv-share,
+.conversation-item.share-open .conv-delete {
   opacity: 1;
+}
+
+.conv-share:hover {
+  color: var(--accent);
+  background: rgba(150, 115, 22, 0.1);
+}
+
+.conv-delete {
+  font-size: 1rem;
 }
 
 .conv-delete:hover {
   color: var(--error);
+  background: rgba(211, 47, 47, 0.08);
+}
+
+/* ── Share Panel ── */
+.share-panel {
+  margin: -2px 8px 6px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.share-label {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-family: 'DM Sans', sans-serif;
+}
+
+.share-toggle-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.73rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.share-toggle-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.share-toggle-btn.enabled {
+  background: rgba(150, 115, 22, 0.1);
+  border-color: rgba(150, 115, 22, 0.4);
+  color: var(--accent);
+}
+
+.share-url-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.share-url-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  font-family: 'Menlo', 'Consolas', monospace;
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.share-copy-btn {
+  flex-shrink: 0;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 0.73rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.share-copy-btn:hover {
+  background: var(--accent-hover);
 }
 
 /* Sidebar navigation links */
@@ -1181,12 +1297,10 @@ body,
   max-width: 820px;
   margin: 0 auto 30px auto;
   width: calc(100% - 48px);
-  background: var(--glass-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid var(--glass-border);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 20px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .input-area textarea {
@@ -1683,4 +1797,41 @@ body,
 
 .mode-picker-cancel:hover {
   color: var(--text-primary);
+}
+
+/* ── Shared Conversation Page ── */
+.shared-page {
+  min-height: 100%;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shared-header {
+  width: 100%;
+  max-width: 820px;
+  padding: 32px 24px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shared-title {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.shared-messages {
+  width: 100%;
+  max-width: 820px;
+  padding: 28px 24px;
+}
+
+.shared-loading,
+.shared-not-found {
+  margin-top: 80px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-family: 'DM Sans', sans-serif;
 }

@@ -65,7 +65,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           {conversations.map((c) => (
             <div key={c.id}>
               <div
-                className={`conversation-item ${c.id === activeId ? "active" : ""}`}
+                className={`conversation-item ${c.id === activeId ? "active" : ""}${shareOpenId === c.id ? " share-open" : ""}`}
                 onClick={() => { onSelect(c.id); onClose(); }}
               >
                 <span className="conv-title">
@@ -80,7 +80,10 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                     onClick={() => setShareOpenId(shareOpenId === c.id ? null : c.id)}
                     title={lang === "zh" ? "分享" : "Share"}
                   >
-                    🔗
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
                   </button>
                   <button
                     className="conv-delete"
