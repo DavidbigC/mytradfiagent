@@ -6,7 +6,6 @@ from datetime import datetime, time as dtime, timedelta
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from config import WEB_PORT
 from db import init_db, get_pool
@@ -82,7 +81,16 @@ os.makedirs(os.path.join(os.path.dirname(__file__), "output"), exist_ok=True)
 # In production, serve the built React frontend
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 if os.path.isdir(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+    from fastapi.responses import FileResponse as _FileResponse
+
+    # Serve /assets/* and other real files directly; fall back to index.html for
+    # all unmatched paths so React Router can handle client-side routes like /share/...
+    @app.get("/{full_path:path}")
+    async def _spa_fallback(full_path: str = ""):
+        candidate = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.isfile(candidate):
+            return _FileResponse(candidate)
+        return _FileResponse(os.path.join(frontend_dist, "index.html"))
 
 
 if __name__ == "__main__":
