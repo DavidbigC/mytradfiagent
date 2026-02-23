@@ -104,6 +104,21 @@ CREATE TABLE IF NOT EXISTS report_cache (
 CREATE INDEX IF NOT EXISTS idx_report_cache_lookup
     ON report_cache(stock_code, report_type, report_year);
 
+-- TA strategy knowledge base (added 2026-02-23)
+CREATE TABLE IF NOT EXISTS ta_strategies (
+    id          SERIAL PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,
+    aliases     TEXT[]        NOT NULL DEFAULT '{}',
+    description TEXT,
+    indicators  TEXT[]        NOT NULL DEFAULT '{}',
+    parameters  JSONB         NOT NULL DEFAULT '{}',
+    source_url  TEXT,
+    created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ta_strategies_fts
+    ON ta_strategies USING gin(to_tsvector('simple', name));
+
 """
 
 
