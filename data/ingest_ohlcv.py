@@ -27,7 +27,6 @@ from rich.progress import (
 
 load_dotenv()
 
-CHECKPOINT_FILE = os.path.join(os.path.dirname(__file__), ".ingest_checkpoint")
 START_DATE = "2020-01-01"
 END_DATE = date.today().isoformat()
 BATCH_SIZE = 2000
@@ -113,20 +112,6 @@ async def _write(pool: asyncpg.Pool, rows: list) -> int:
     return len(rows)
 
 
-# ── Checkpoint ────────────────────────────────────────────────────────────────
-
-def _load_checkpoint() -> set:
-    if not os.path.exists(CHECKPOINT_FILE):
-        return set()
-    with open(CHECKPOINT_FILE) as f:
-        return {line.strip() for line in f if line.strip()}
-
-
-def _save_checkpoint(code: str):
-    with open(CHECKPOINT_FILE, "a") as f:
-        f.write(code + "\n")
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main():
@@ -154,15 +139,16 @@ async def main():
             buckets["BJ"][:LOCAL_LIMIT_PER_EXCHANGE]
         )
 
-    done = _load_checkpoint()
+    pool = await asyncpg.create_pool(_build_dsn(), min_size=2, max_size=CONCURRENCY + 1)
+    rows_in_db = await pool.fetch("SELECT DISTINCT LOWER(exchange) || '.' || code FROM ohlcv_5m")
+    done = {r[0] for r in rows_in_db}
     todo = [s for s in all_stocks if s not in done]
-    print(f"Total: {len(all_stocks):,} | Done: {len(done):,} | Remaining: {len(todo):,} | Workers: {CONCURRENCY}")
+    print(f"Total: {len(all_stocks):,} | In DB: {len(done):,} | Remaining: {len(todo):,} | Workers: {CONCURRENCY}")
 
     if not todo:
         print("Nothing to do.")
         return
 
-    pool = await asyncpg.create_pool(_build_dsn(), min_size=2, max_size=CONCURRENCY + 1)
     loop = asyncio.get_event_loop()
     sem = asyncio.Semaphore(CONCURRENCY)
 
@@ -191,7 +177,6 @@ async def main():
                         code_out, rows = await loop.run_in_executor(executor, _fetch_stock, bs_code)
                         n = await _write(pool, rows)
                         total_rows += n
-                        _save_checkpoint(code_out)
                         progress.update(task, advance=1, description=f"{code_out}  {n:,} rows  ({total_rows:,} total)")
                     except Exception as e:
                         errors.append((bs_code, str(e)))
