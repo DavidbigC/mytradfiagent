@@ -140,8 +140,17 @@ async def main():
         )
 
     pool = await asyncpg.create_pool(_build_dsn(), min_size=2, max_size=CONCURRENCY + 1)
-    rows_in_db = await pool.fetch("SELECT DISTINCT LOWER(exchange) || '.' || code FROM ohlcv_5m")
-    done = {r[0] for r in rows_in_db}
+    rows_in_db = await pool.fetch("""
+        WITH RECURSIVE t AS (
+            (SELECT code FROM ohlcv_5m ORDER BY code LIMIT 1)
+            UNION ALL
+            SELECT (SELECT code FROM ohlcv_5m WHERE code > t.code ORDER BY code LIMIT 1)
+            FROM t WHERE t.code IS NOT NULL
+        )
+        SELECT code FROM t WHERE code IS NOT NULL
+    """)
+    codes_in_db = {r[0].strip() for r in rows_in_db}
+    done = {s for s in all_stocks if s.split(".")[1] in codes_in_db}
     todo = [s for s in all_stocks if s not in done]
     print(f"Total: {len(all_stocks):,} | In DB: {len(done):,} | Remaining: {len(todo):,} | Workers: {CONCURRENCY}")
 
