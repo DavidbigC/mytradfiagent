@@ -151,9 +151,10 @@ def _fetch_etf_price(code: str) -> tuple[str, list]:
 
 
 async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str]):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(CONCURRENCY)
     total_rows = 0
+    errors: list[str] = []
     with Progress(
         SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
         TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
@@ -175,7 +176,9 @@ async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str]):
                                 ON CONFLICT DO NOTHING
                             """, rows)
                         total_rows += len(rows)
+                    else:
+                        errors.append(code_out)
                     progress.update(task, advance=1,
                         description=f"{code_out} {len(rows)} rows ({total_rows:,} total)")
             await asyncio.gather(*[process_one(c) for c in etf_codes])
-    print(f"  ETF prices: {total_rows:,} rows")
+    print(f"  ETF prices: {total_rows:,} rows. {len(errors)} codes returned no data.")
