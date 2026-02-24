@@ -69,8 +69,14 @@ def _parse_rate(val) -> float | None:
 
 
 def get_etf_codes() -> list[str]:
-    df = ak.fund_etf_spot_em()
-    return [str(r).strip().zfill(6) for r in df["代码"].tolist()]
+    try:
+        df = ak.fund_etf_spot_em()
+        return [str(r).strip().zfill(6) for r in df["代码"].tolist()]
+    except Exception:
+        # fund_etf_spot_em uses 88.push2.eastmoney.com which can be unreachable
+        # outside China; fall back to fund_etf_fund_daily_em (different endpoint)
+        df = ak.fund_etf_fund_daily_em()
+        return [str(r).strip().zfill(6) for r in df["基金代码"].tolist()]
 
 
 # ── 1. Catalog ────────────────────────────────────────────────────────────────
@@ -127,6 +133,39 @@ async def load_managers(pool: asyncpg.Pool):
             ON CONFLICT DO NOTHING
         """, valid)
     print(f"  Inserted {len(valid):,} manager-fund associations")
+
+
+# ── 2b. Manager profiles ──────────────────────────────────────────────────────
+
+async def load_manager_profiles(pool: asyncpg.Pool):
+    """Cache fund_manager_em() data into fund_manager_profiles for fast local lookup."""
+    print("Loading manager profiles...")
+    df = ak.fund_manager_em()
+    rows: dict[str, tuple] = {}
+    for _, r in df.iterrows():
+        name = str(r.get("姓名") or "").strip()
+        if not name:
+            continue
+        rows[name] = (
+            name,
+            str(r.get("所属公司") or "").strip() or None,
+            int(r["累计从业时间"])        if pd.notna(r.get("累计从业时间"))        else None,
+            float(r["现任基金资产总规模"]) if pd.notna(r.get("现任基金资产总规模")) else None,
+            float(r["现任基金最佳回报"])   if pd.notna(r.get("现任基金最佳回报"))   else None,
+        )
+    async with pool.acquire() as conn:
+        await conn.executemany("""
+            INSERT INTO fund_manager_profiles
+              (manager_name, company, tenure_days, total_aum, best_return_pct)
+            VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT (manager_name) DO UPDATE SET
+              company         = EXCLUDED.company,
+              tenure_days     = EXCLUDED.tenure_days,
+              total_aum       = EXCLUDED.total_aum,
+              best_return_pct = EXCLUDED.best_return_pct,
+              updated_at      = now()
+        """, list(rows.values()))
+    print(f"  Manager profiles: {len(rows):,} rows upserted")
 
 
 # ── 3. ETF price history ──────────────────────────────────────────────────────
@@ -461,8 +500,9 @@ async def main():
         print(f"LOCAL_TEST: capping to 50 ETFs")
         etf_codes = etf_codes[:50]
 
-    # 3. Managers
+    # 3. Managers + profiles
     await load_managers(pool)
+    await load_manager_profiles(pool)
 
     # 4 + 5. ETF price history + NAV — run concurrently (each uses CONCURRENCY workers)
     print(f"\nLoading ETF prices + NAV concurrently ({len(etf_codes)} ETFs, {PRICE_START}–{PRICE_END})...")

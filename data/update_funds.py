@@ -153,8 +153,12 @@ def _fetch_recent_price(code: str, start: str, end: str) -> tuple[str, list]:
 
 async def update_etf_prices(pool: asyncpg.Pool):
     print("Updating ETF prices...")
-    df = ak.fund_etf_spot_em()
-    etf_codes = [str(r).strip().zfill(6) for r in df["代码"].tolist()]
+    try:
+        df = ak.fund_etf_spot_em()
+        etf_codes = [str(r).strip().zfill(6) for r in df["代码"].tolist()]
+    except Exception:
+        df = ak.fund_etf_fund_daily_em()
+        etf_codes = [str(r).strip().zfill(6) for r in df["基金代码"].tolist()]
     start = (date.today() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y%m%d")
     end   = date.today().strftime("%Y%m%d")
 
@@ -227,6 +231,38 @@ async def update_managers(pool: asyncpg.Pool):
     print(f"  Managers: +{added} new, -{removed} departed")
 
 
+# ── 4. Manager profiles refresh ──────────────────────────────────────────────
+
+async def update_manager_profiles(pool: asyncpg.Pool):
+    print("Refreshing manager profiles...")
+    df = ak.fund_manager_em()
+    rows: dict[str, tuple] = {}
+    for _, r in df.iterrows():
+        name = str(r.get("姓名") or "").strip()
+        if not name:
+            continue
+        rows[name] = (
+            name,
+            str(r.get("所属公司") or "").strip() or None,
+            int(r["累计从业时间"])        if pd.notna(r.get("累计从业时间"))        else None,
+            float(r["现任基金资产总规模"]) if pd.notna(r.get("现任基金资产总规模")) else None,
+            float(r["现任基金最佳回报"])   if pd.notna(r.get("现任基金最佳回报"))   else None,
+        )
+    async with pool.acquire() as conn:
+        await conn.executemany("""
+            INSERT INTO fund_manager_profiles
+              (manager_name, company, tenure_days, total_aum, best_return_pct)
+            VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT (manager_name) DO UPDATE SET
+              company         = EXCLUDED.company,
+              tenure_days     = EXCLUDED.tenure_days,
+              total_aum       = EXCLUDED.total_aum,
+              best_return_pct = EXCLUDED.best_return_pct,
+              updated_at      = now()
+        """, list(rows.values()))
+    print(f"  Manager profiles: {len(rows):,} upserted")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main(args: argparse.Namespace):
@@ -237,6 +273,7 @@ async def main(args: argparse.Namespace):
 
     if args.check_managers or args.check_fees:
         await update_managers(pool)
+        await update_manager_profiles(pool)
 
     if args.check_fees:
         import sys

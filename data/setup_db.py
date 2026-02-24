@@ -236,8 +236,19 @@ CREATE TABLE IF NOT EXISTS fund_holdings (
 """)
 cur.execute("CREATE INDEX IF NOT EXISTS fund_holdings_code_q ON fund_holdings (fund_code, quarter)")
 
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_manager_profiles (
+    manager_name    TEXT PRIMARY KEY,
+    company         TEXT,
+    tenure_days     INT,
+    total_aum       NUMERIC(20,2),
+    best_return_pct NUMERIC(8,2),
+    updated_at      TIMESTAMPTZ DEFAULT now()
+)
+""")
+
 conn.commit()
-print("fund tables: funds, fund_managers, fund_fees, fund_nav, fund_price, fund_holdings ready")
+print("fund tables: funds, fund_managers, fund_manager_profiles, fund_fees, fund_nav, fund_price, fund_holdings ready")
 
 cur.close()
 conn.close()
