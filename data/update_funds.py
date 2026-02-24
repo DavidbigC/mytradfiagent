@@ -163,8 +163,9 @@ async def update_etf_prices(pool: asyncpg.Pool):
     except Exception:
         df = ak.fund_etf_fund_daily_em()
         etf_codes = [str(r).strip().zfill(6) for r in df["基金代码"].tolist()]
-    start = (date.today() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y%m%d")
-    end   = date.today().strftime("%Y%m%d")
+    yesterday = date.today() - timedelta(days=1)
+    start = (yesterday - timedelta(days=LOOKBACK_DAYS - 1)).strftime("%Y%m%d")
+    end   = yesterday.strftime("%Y%m%d")
 
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(CONCURRENCY)

@@ -30,7 +30,7 @@ LOCAL_TEST    = os.getenv("LOCAL_TEST", "0") == "1"
 SKIP_OVERVIEW = os.getenv("SKIP_OVERVIEW", "0") == "1"
 CONCURRENCY   = int(os.getenv("CONCURRENCY", "5"))
 PRICE_START   = os.getenv("PRICE_START", "20200101")
-PRICE_END     = date.today().strftime("%Y%m%d")
+PRICE_END     = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
 START_YEAR    = int(os.getenv("START_YEAR", "2023"))
 
 
