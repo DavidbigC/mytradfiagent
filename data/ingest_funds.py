@@ -11,6 +11,7 @@ Environment variables:
 """
 import asyncio
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
@@ -54,8 +55,11 @@ def _derive_exchange(code: str) -> str | None:
 def _parse_rate(val) -> float | None:
     if val is None or str(val).strip() in ("", "-", "--"):
         return None
+    m = re.search(r"[-+]?\d+\.?\d*", str(val))
+    if not m:
+        return None
     try:
-        return float(str(val).replace("%", "").strip())
+        return float(m.group())
     except ValueError:
         return None
 
@@ -277,3 +281,72 @@ async def load_open_fund_navs(pool: asyncpg.Pool):
             ON CONFLICT DO NOTHING
         """, rows)
     print(f"  Open fund NAV: {len(rows):,} rows")
+
+
+# ── 5. Fees via fund_overview_em ──────────────────────────────────────────────
+
+def _fetch_overview(code: str) -> tuple[str, dict | None]:
+    try:
+        s = ak.fund_overview_em(symbol=code)
+        row = s.iloc[0]
+        # Inception date is in '成立日期/规模' as 'YYYY年MM月DD日 / ...'
+        raw_date = str(row.get("成立日期/规模") or "")
+        m = re.search(r"(\d{4})年(\d{2})月(\d{2})日", raw_date)
+        inception_iso = f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else ""
+        return code, {
+            "full_name":         str(row.get("基金全称")     or ""),
+            "inception_date":    inception_iso,
+            "tracking_index":    str(row.get("跟踪标的")     or ""),
+            "mgmt_company":      str(row.get("基金管理人")   or ""),
+            "custodian":         str(row.get("基金托管人")   or ""),
+            "mgmt_rate":         _parse_rate(row.get("管理费率")),
+            "custody_rate":      _parse_rate(row.get("托管费率")),
+            "sales_svc_rate":    _parse_rate(row.get("销售服务费率")),
+            "subscription_rate": _parse_rate(row.get("最高认购费率")),
+        }
+    except Exception:
+        return code, None
+
+
+async def load_fees(pool: asyncpg.Pool, codes: list[str]):
+    """Fetch fund overview and fees for each code, update funds table and insert fund_fees row."""
+    loop = asyncio.get_running_loop()
+    sem = asyncio.Semaphore(CONCURRENCY)
+    ok = 0
+    today = date.today()
+    with Progress(
+        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+        TaskProgressColumn(), TimeElapsedColumn(),
+        TextColumn("[cyan]{task.description}"), refresh_per_second=4,
+    ) as progress:
+        task = progress.add_task("Fund overview/fees...", total=len(codes))
+        with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+            async def process_one(code: str):
+                nonlocal ok
+                async with sem:
+                    code_out, data = await loop.run_in_executor(executor, _fetch_overview, code)
+                    if data:
+                        async with pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE funds SET
+                                  full_name      = NULLIF($2, ''),
+                                  inception_date = CASE WHEN $3 ~ E'^\\d{4}-\\d{2}-\\d{2}$'
+                                                        THEN $3::DATE ELSE NULL END,
+                                  tracking_index = NULLIF($4, ''),
+                                  mgmt_company   = NULLIF($5, ''),
+                                  custodian      = NULLIF($6, ''),
+                                  updated_at     = now()
+                                WHERE code = $1
+                            """, code, data["full_name"], data["inception_date"],
+                                data["tracking_index"], data["mgmt_company"], data["custodian"])
+                            await conn.execute("""
+                                INSERT INTO fund_fees
+                                  (fund_code, mgmt_rate, custody_rate, sales_svc_rate, subscription_rate, effective_date)
+                                VALUES ($1,$2,$3,$4,$5,$6)
+                                ON CONFLICT (fund_code, effective_date) DO NOTHING
+                            """, code, data["mgmt_rate"], data["custody_rate"],
+                                data["sales_svc_rate"], data["subscription_rate"], today)
+                        ok += 1
+                    progress.update(task, advance=1, description=f"{code_out}")
+            await asyncio.gather(*[process_one(c) for c in codes])
+    print(f"  Fund overview/fees: {ok}/{len(codes)} succeeded")
