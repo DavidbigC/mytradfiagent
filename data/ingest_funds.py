@@ -354,3 +354,70 @@ async def load_fees(pool: asyncpg.Pool, codes: list[str]):
                     progress.update(task, advance=1, description=f"{code_out}")
             await asyncio.gather(*[process_one(c) for c in codes])
     print(f"  Fund overview/fees: {ok}/{len(codes)} succeeded")
+
+
+# ── 6. Quarterly holdings ─────────────────────────────────────────────────────
+
+def _fetch_holdings(code: str, year: int) -> tuple[str, int, list]:
+    try:
+        df = ak.fund_portfolio_hold_em(symbol=code, date=str(year))
+        if df is None or df.empty:
+            return code, year, []
+        rows = []
+        for _, r in df.iterrows():
+            try:
+                quarter   = str(r.get("季度")    or "").strip()
+                raw_code  = str(r.get("股票代码") or "").strip()
+                if not quarter or not raw_code:
+                    continue
+                rows.append((
+                    code, quarter, "stock",
+                    raw_code,
+                    str(r.get("股票名称") or ""),
+                    float(r["占净值比例"]) if pd.notna(r.get("占净值比例")) else None,
+                    int(float(r["持股数"])) if pd.notna(r.get("持股数")) else None,
+                    float(r["持仓市值"])   if pd.notna(r.get("持仓市值")) else None,
+                ))
+            except Exception:
+                continue
+        return code, year, rows
+    except Exception:
+        return code, year, []
+
+
+async def load_holdings(pool: asyncpg.Pool, codes: list[str]):
+    """Load quarterly stock holdings for each fund for START_YEAR to current year."""
+    years = list(range(START_YEAR, date.today().year + 1))
+    tasks_list = [(c, y) for c in codes for y in years]
+    loop = asyncio.get_running_loop()
+    sem = asyncio.Semaphore(CONCURRENCY)
+    total_rows = 0
+    empty_count = 0
+    with Progress(
+        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+        TaskProgressColumn(), TimeElapsedColumn(),
+        TextColumn("[cyan]{task.description}"), refresh_per_second=4,
+    ) as progress:
+        ptask = progress.add_task("Holdings...", total=len(tasks_list))
+        with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+            async def process_one(code: str, year: int):
+                nonlocal total_rows, empty_count
+                async with sem:
+                    code_out, yr, rows = await loop.run_in_executor(
+                        executor, _fetch_holdings, code, year)
+                    if rows:
+                        async with pool.acquire() as conn:
+                            await conn.executemany("""
+                                INSERT INTO fund_holdings
+                                  (fund_code, quarter, holding_type, security_code, security_name,
+                                   pct_of_nav, shares, market_value)
+                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                                ON CONFLICT DO NOTHING
+                            """, rows)
+                        total_rows += len(rows)
+                    else:
+                        empty_count += 1
+                    progress.update(ptask, advance=1,
+                        description=f"{code_out}/{yr} {len(rows)} rows ({total_rows:,} total)")
+            await asyncio.gather(*[process_one(c, y) for c, y in tasks_list])
+    print(f"  Holdings: {total_rows:,} rows. {empty_count} fund/year combos returned no data.")
