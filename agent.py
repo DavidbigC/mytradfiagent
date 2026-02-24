@@ -9,7 +9,7 @@ import time
 from typing import Callable
 from uuid import UUID
 from openai import AsyncOpenAI
-from config import get_minimax_config, get_system_prompt, get_planning_prompt, GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
+from config import get_minimax_config, get_system_prompt, get_planning_prompt, GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_REASONING
 from tools import TOOL_SCHEMAS, execute_tool
 from accounts import (
     get_active_conversation, get_user_lock,
@@ -46,7 +46,7 @@ _mm_api_key, _mm_base_url, _mm_model = get_minimax_config()
 client = AsyncOpenAI(api_key=_mm_api_key, base_url=_mm_base_url)
 
 _grok_client = AsyncOpenAI(api_key=GROK_API_KEY, base_url=GROK_BASE_URL) if GROK_API_KEY else None
-_grok_model = GROK_MODEL_NOREASONING
+_grok_model = GROK_MODEL_REASONING
 
 MAX_TURNS = 30
 
@@ -580,6 +580,7 @@ async def _run_agent_fast_inner(
     on_token: Callable | None = None,
 ) -> dict:
     from config import get_fast_system_prompt
+    from tools.web import _grok_web_search
 
     user_id_context.set(user_id)
 
@@ -601,12 +602,25 @@ async def _run_agent_fast_inner(
     messages = await load_recent_messages(conv_id)
     await save_message(conv_id, "user", user_message)
 
+    # Step 1: live web search via Grok Responses API
+    await _emit("⚡ Fast Mode · Searching live data...")
+    search = await _grok_web_search(user_message)
+
+    # Build search context block to inject into the user turn
+    search_context = ""
+    if search.get("answer"):
+        search_context = f"\n\n[实时搜索结果]\n{search['answer']}"
+        if search.get("sources"):
+            urls = "\n".join(s["url"] for s in search["sources"][:10] if s.get("url"))
+            search_context += f"\n\n可用来源:\n{urls}"
+
+    augmented_message = user_message + search_context if search_context else user_message
+
+    # Step 2: stream a clean summary via Grok chat completions
+    await _emit("⚡ Fast Mode · Summarizing...")
     system_msg = {"role": "system", "content": get_fast_system_prompt()}
-    full_messages = [system_msg] + messages + [{"role": "user", "content": user_message}]
+    full_messages = [system_msg] + messages + [{"role": "user", "content": augmented_message}]
 
-    await _emit("⚡ Fast Mode · Thinking...")
-
-    # Single call — no tools, Grok uses its built-in web search
     response_text, _, _ = await _stream_llm_response(
         full_messages, None,
         on_token=_emit_token, on_thinking_chunk=None,

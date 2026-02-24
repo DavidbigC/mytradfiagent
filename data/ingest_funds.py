@@ -4,10 +4,8 @@
 Environment variables:
   MARKETDATA_URL   PostgreSQL connection string (required)
   CONCURRENCY=5    Parallel workers for per-fund API calls
-  LOCAL_TEST=1     Limit to first 50 ETFs; skip open funds and holdings
-  SKIP_OVERVIEW=1  Skip fund_overview_em (fees) — saves ~2h for full load
-  PRICE_START      Earliest date for price/NAV history (default 20200101)
-  START_YEAR       Earliest year for holdings (default 2023)
+  LOCAL_TEST=1     Limit to first 50 funds
+  PRICE_START      Earliest date for NAV history (default 20200101)
 """
 import asyncio
 import os
@@ -26,9 +24,8 @@ from rich.progress import (
 
 load_dotenv()
 
-LOCAL_TEST    = os.getenv("LOCAL_TEST", "0") == "1"
-SKIP_OVERVIEW = os.getenv("SKIP_OVERVIEW", "0") == "1"
-CONCURRENCY   = int(os.getenv("CONCURRENCY", "5"))
+LOCAL_TEST  = os.getenv("LOCAL_TEST", "0") == "1"
+CONCURRENCY = int(os.getenv("CONCURRENCY", "15"))
 PRICE_START   = os.getenv("PRICE_START", "20200101")
 PRICE_END     = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
 START_YEAR    = int(os.getenv("START_YEAR", "2023"))
@@ -68,15 +65,6 @@ def _parse_rate(val) -> float | None:
         return None
 
 
-def get_etf_codes() -> list[str]:
-    try:
-        df = ak.fund_etf_spot_em()
-        return [str(r).strip().zfill(6) for r in df["代码"].tolist()]
-    except Exception:
-        # fund_etf_spot_em uses 88.push2.eastmoney.com which can be unreachable
-        # outside China; fall back to fund_etf_fund_daily_em (different endpoint)
-        df = ak.fund_etf_fund_daily_em()
-        return [str(r).strip().zfill(6) for r in df["基金代码"].tolist()]
 
 
 # ── 1. Catalog ────────────────────────────────────────────────────────────────
@@ -168,94 +156,7 @@ async def load_manager_profiles(pool: asyncpg.Pool):
     print(f"  Manager profiles: {len(rows):,} rows upserted")
 
 
-# ── 3. ETF price history ──────────────────────────────────────────────────────
 
-def _fetch_etf_price(code: str, start: str) -> tuple[str, list]:
-    try:
-        df = ak.fund_etf_hist_em(
-            symbol=code, period="daily",
-            start_date=start, end_date=PRICE_END, adjust="",
-        )
-        rows = []
-        for _, r in df.iterrows():
-            try:
-                raw_d = r["日期"]
-                if hasattr(raw_d, "date") and callable(raw_d.date):
-                    d = raw_d.date()  # pd.Timestamp → strips tz, gives datetime.date
-                else:
-                    d = date.fromisoformat(str(raw_d))
-                rows.append((
-                    code, d,
-                    float(r["开盘"])   if r["开盘"]   else None,
-                    float(r["最高"])   if r["最高"]   else None,
-                    float(r["最低"])   if r["最低"]   else None,
-                    float(r["收盘"])   if r["收盘"]   else None,
-                    int(float(r["成交量"])) if r["成交量"] else None,
-                    float(r["成交额"]) if r["成交额"] else None,
-                    float(r["换手率"]) if r["换手率"] else None,
-                    None,  # premium_discount_pct — not in this endpoint
-                ))
-            except Exception:
-                continue
-        return code, rows
-    except Exception:
-        return code, []
-
-
-async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str], *, progress: Progress | None = None):
-    loop = asyncio.get_running_loop()
-    sem = asyncio.Semaphore(CONCURRENCY)
-    total_rows = 0
-    errors: list[str] = []
-
-    # Bulk-fetch latest stored date per code — only fetch missing data
-    async with pool.acquire() as conn:
-        rows_db = await conn.fetch(
-            "SELECT fund_code, MAX(date) AS last_date FROM fund_price"
-            " WHERE fund_code = ANY($1) GROUP BY fund_code",
-            etf_codes,
-        )
-
-    latest: dict[str, str] = {
-        r["fund_code"]: (r["last_date"] + timedelta(days=1)).strftime("%Y%m%d")
-        for r in rows_db
-    }
-
-    async def _run(prog: Progress) -> None:
-        nonlocal total_rows
-        task = prog.add_task("ETF prices...", total=len(etf_codes))
-        with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
-            async def process_one(code: str):
-                nonlocal total_rows
-                start = latest.get(code, PRICE_START)
-                async with sem:
-                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_price, code, start)
-                    if rows:
-                        async with pool.acquire() as conn:
-                            await conn.executemany("""
-                                INSERT INTO fund_price
-                                  (fund_code, date, open, high, low, close, volume, amount, turnover_rate, premium_discount_pct)
-                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-                                ON CONFLICT DO NOTHING
-                            """, rows)
-                        total_rows += len(rows)
-                    else:
-                        errors.append(code_out)
-                    prog.update(task, advance=1,
-                        description=f"price {code_out} {len(rows)}r ({total_rows:,} total)")
-            await asyncio.gather(*[process_one(c) for c in etf_codes])
-
-    if progress is not None:
-        await _run(progress)
-    else:
-        with Progress(
-            SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
-            TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
-            TimeRemainingColumn(), TextColumn("[cyan]{task.description}"),
-            refresh_per_second=4,
-        ) as prog:
-            await _run(prog)
-    print(f"  ETF prices: {total_rows:,} rows. {len(errors)} codes returned no data.")
 
 
 # ── 4. NAV ────────────────────────────────────────────────────────────────────
@@ -277,6 +178,8 @@ def _fetch_etf_nav(code: str, start: str) -> tuple[str, list]:
                     float(r["单位净值"])  if pd.notna(r.get("单位净值"))  else None,
                     float(r["累计净值"])  if pd.notna(r.get("累计净值"))  else None,
                     _parse_rate(r.get("日增长率")),
+                    str(r["申购状态"]) if pd.notna(r.get("申购状态")) else None,
+                    str(r["赎回状态"]) if pd.notna(r.get("赎回状态")) else None,
                 ))
             except Exception:
                 continue
@@ -285,40 +188,34 @@ def _fetch_etf_nav(code: str, start: str) -> tuple[str, list]:
         return code, []
 
 
-async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str], *, progress: Progress | None = None):
-    """Load NAV history for all ETFs from fund_etf_fund_info_em."""
+async def load_fund_navs(pool: asyncpg.Pool, fund_codes: list[str], *, progress: Progress | None = None):
+    """Load NAV history for all funds via fund_etf_fund_info_em."""
+    async with pool.acquire() as conn:
+        existing = {r["fund_code"] for r in await conn.fetch("SELECT DISTINCT fund_code FROM fund_nav")}
+    new_codes = [c for c in fund_codes if c not in existing]
+    print(f"  {len(existing):,} funds already in DB, fetching {len(new_codes):,} new")
+    if not new_codes:
+        return
+
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(CONCURRENCY)
     total_rows = 0
     errors: list[str] = []
 
-    # Bulk-fetch latest stored date per code — only fetch missing data
-    async with pool.acquire() as conn:
-        rows_db = await conn.fetch(
-            "SELECT fund_code, MAX(date) AS last_date FROM fund_nav"
-            " WHERE fund_code = ANY($1) GROUP BY fund_code",
-            etf_codes,
-        )
-
-    latest: dict[str, str] = {
-        r["fund_code"]: (r["last_date"] + timedelta(days=1)).strftime("%Y%m%d")
-        for r in rows_db
-    }
-
     async def _run(prog: Progress) -> None:
         nonlocal total_rows
-        task = prog.add_task("ETF NAV...", total=len(etf_codes))
+        task = prog.add_task("Fund NAV...", total=len(new_codes))
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             async def process_one(code: str):
                 nonlocal total_rows
-                start = latest.get(code, PRICE_START)
+                start = PRICE_START
                 async with sem:
                     code_out, rows = await loop.run_in_executor(executor, _fetch_etf_nav, code, start)
                     if rows:
                         async with pool.acquire() as conn:
                             await conn.executemany("""
-                                INSERT INTO fund_nav (fund_code, date, unit_nav, accum_nav, daily_return_pct)
-                                VALUES ($1,$2,$3,$4,$5)
+                                INSERT INTO fund_nav (fund_code, date, unit_nav, accum_nav, daily_return_pct, sub_status, redeem_status)
+                                VALUES ($1,$2,$3,$4,$5,$6,$7)
                                 ON CONFLICT DO NOTHING
                             """, rows)
                         total_rows += len(rows)
@@ -326,7 +223,7 @@ async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str], *, progress: P
                         errors.append(code_out)
                     prog.update(task, advance=1,
                         description=f"nav  {code_out} {len(rows)}r ({total_rows:,} total)")
-            await asyncio.gather(*[process_one(c) for c in etf_codes])
+            await asyncio.gather(*[process_one(c) for c in new_codes])
 
     if progress is not None:
         await _run(progress)
@@ -337,49 +234,111 @@ async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str], *, progress: P
             TextColumn("[cyan]{task.description}"), refresh_per_second=4,
         ) as prog:
             await _run(prog)
-    print(f"  ETF NAVs: {total_rows:,} rows. {len(errors)} codes returned no data.")
+    print(f"  Fund NAVs: {total_rows:,} rows. {len(errors)} codes returned no data.")
 
 
-async def load_open_fund_navs(pool: asyncpg.Pool):
-    """Bulk load today's NAV for all open-ended funds (single API call).
+# ── 5. Fund rank (fund_open_fund_rank_em) ─────────────────────────────────────
 
-    fund_open_fund_daily_em returns date-prefixed NAV columns, e.g.
-    '2026-02-13-单位净值' and '2026-02-13-累计净值'. We detect the most
-    recent date prefix from the column names at runtime.
-    """
-    print("Fetching open fund NAV bulk...")
-    df = ak.fund_open_fund_daily_em()
-    # Detect date-prefixed NAV columns (format: YYYY-MM-DD-单位净值)
-    unit_col = next((c for c in df.columns if c.endswith("-单位净值")), None)
-    accum_col = next((c for c in df.columns if c.endswith("-累计净值")), None)
-    if unit_col is None and accum_col is None:
-        print("  WARNING: no NAV columns detected in fund_open_fund_daily_em response")
-        return
-    nav_date = date.fromisoformat(unit_col[:-len("-单位净值")]) if unit_col else date.today()
+async def load_fund_rank(pool: asyncpg.Pool):
+    """Snapshot of all open fund rankings and performance metrics."""
+    print("Fetching fund rank snapshot...")
+    df = ak.fund_open_fund_rank_em(symbol="全部")
+    today = date.today()
     rows = []
     for _, r in df.iterrows():
         raw_code = str(r.get("基金代码") or "").strip()
         if not raw_code:
             continue
+        raw_date = r.get("日期")
         try:
-            rows.append((
-                raw_code.zfill(6), nav_date,
-                float(r[unit_col])  if unit_col and pd.notna(r.get(unit_col))  else None,
-                float(r[accum_col]) if accum_col and pd.notna(r.get(accum_col)) else None,
-                _parse_rate(r.get("日增长率")),
-            ))
+            nav_date = raw_date.date() if hasattr(raw_date, "date") else date.fromisoformat(str(raw_date))
         except Exception:
-            continue
+            nav_date = today
+        rows.append((
+            raw_code.zfill(6),
+            nav_date,
+            int(r["序号"])             if pd.notna(r.get("序号"))   else None,
+            str(r["基金简称"])          if pd.notna(r.get("基金简称")) else None,
+            float(r["单位净值"])        if pd.notna(r.get("单位净值")) else None,
+            float(r["累计净值"])        if pd.notna(r.get("累计净值")) else None,
+            float(r["日增长率"])        if pd.notna(r.get("日增长率")) else None,
+            float(r["近1周"])           if pd.notna(r.get("近1周"))   else None,
+            float(r["近1月"])           if pd.notna(r.get("近1月"))   else None,
+            float(r["近3月"])           if pd.notna(r.get("近3月"))   else None,
+            float(r["近6月"])           if pd.notna(r.get("近6月"))   else None,
+            float(r["近1年"])           if pd.notna(r.get("近1年"))   else None,
+            float(r["近2年"])           if pd.notna(r.get("近2年"))   else None,
+            float(r["近3年"])           if pd.notna(r.get("近3年"))   else None,
+            float(r["今年来"])          if pd.notna(r.get("今年来"))   else None,
+            float(r["成立来"])          if pd.notna(r.get("成立来"))   else None,
+            float(r["自定义"])          if pd.notna(r.get("自定义"))   else None,
+            str(r["手续费"])            if pd.notna(r.get("手续费"))   else None,
+        ))
     async with pool.acquire() as conn:
         await conn.executemany("""
-            INSERT INTO fund_nav (fund_code, date, unit_nav, accum_nav, daily_return_pct)
-            VALUES ($1,$2,$3,$4,$5)
-            ON CONFLICT DO NOTHING
+            INSERT INTO fund_rank (
+                fund_code, date, rank, name,
+                unit_nav, accum_nav, daily_return_pct,
+                return_1w, return_1m, return_3m, return_6m,
+                return_1y, return_2y, return_3y,
+                return_ytd, return_since_inception, return_custom, fee
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+            ON CONFLICT (fund_code, date) DO UPDATE SET
+                rank=EXCLUDED.rank, unit_nav=EXCLUDED.unit_nav,
+                accum_nav=EXCLUDED.accum_nav, daily_return_pct=EXCLUDED.daily_return_pct,
+                return_1w=EXCLUDED.return_1w, return_1m=EXCLUDED.return_1m,
+                return_3m=EXCLUDED.return_3m, return_6m=EXCLUDED.return_6m,
+                return_1y=EXCLUDED.return_1y, return_2y=EXCLUDED.return_2y,
+                return_3y=EXCLUDED.return_3y, return_ytd=EXCLUDED.return_ytd,
+                return_since_inception=EXCLUDED.return_since_inception,
+                return_custom=EXCLUDED.return_custom, fee=EXCLUDED.fee,
+                updated_at=now()
         """, rows)
-    print(f"  Open fund NAV: {len(rows):,} rows")
+    print(f"  Fund rank: {len(rows):,} rows")
 
 
-# ── 5. Fees via fund_overview_em ──────────────────────────────────────────────
+# ── 6. Fund ratings (fund_rating_all) ─────────────────────────────────────────
+
+async def load_fund_ratings(pool: asyncpg.Pool):
+    """Load multi-agency fund ratings snapshot."""
+    print("Fetching fund ratings...")
+    df = ak.fund_rating_all()
+    rows = []
+    for _, r in df.iterrows():
+        raw_code = str(r.get("代码") or "").strip()
+        if not raw_code:
+            continue
+        rows.append((
+            raw_code.zfill(6),
+            str(r["简称"])       if pd.notna(r.get("简称"))    else None,
+            str(r["基金经理"])    if pd.notna(r.get("基金经理")) else None,
+            str(r["基金公司"])    if pd.notna(r.get("基金公司")) else None,
+            int(r["5星评级家数"]) if pd.notna(r.get("5星评级家数")) else None,
+            float(r["上海证券"]) if pd.notna(r.get("上海证券")) else None,
+            float(r["招商证券"]) if pd.notna(r.get("招商证券")) else None,
+            float(r["济安金信"]) if pd.notna(r.get("济安金信")) else None,
+            float(r["晨星评级"]) if pd.notna(r.get("晨星评级")) else None,
+            float(r["手续费"])   if pd.notna(r.get("手续费"))  else None,
+            str(r["类型"])       if pd.notna(r.get("类型"))    else None,
+        ))
+    async with pool.acquire() as conn:
+        await conn.executemany("""
+            INSERT INTO fund_rating (
+                fund_code, name, managers, company, five_star_count,
+                rating_shzq, rating_zszq, rating_jajx, rating_morningstar,
+                fee, type
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            ON CONFLICT (fund_code) DO UPDATE SET
+                name=EXCLUDED.name, managers=EXCLUDED.managers,
+                company=EXCLUDED.company, five_star_count=EXCLUDED.five_star_count,
+                rating_shzq=EXCLUDED.rating_shzq, rating_zszq=EXCLUDED.rating_zszq,
+                rating_jajx=EXCLUDED.rating_jajx, rating_morningstar=EXCLUDED.rating_morningstar,
+                fee=EXCLUDED.fee, type=EXCLUDED.type, updated_at=now()
+        """, rows)
+    print(f"  Fund ratings: {len(rows):,} rows")
+
+
+# ── 7. Fees via fund_overview_em ──────────────────────────────────────────────
 
 def _fetch_overview(code: str) -> tuple[str, dict | None]:
     try:
@@ -522,48 +481,27 @@ async def load_holdings(pool: asyncpg.Pool, codes: list[str]):
 async def main():
     pool = await asyncpg.create_pool(_build_dsn(), min_size=2, max_size=CONCURRENCY + 2)
 
-    # 1. Catalog
-    await load_catalog(pool)
-
-    # 2. ETF code list
-    print("Fetching ETF list...")
-    etf_codes = get_etf_codes()
+    # 1. Catalog (returns all fund codes)
+    all_codes = await load_catalog(pool)
     if LOCAL_TEST:
-        print(f"LOCAL_TEST: capping to 50 ETFs")
-        etf_codes = etf_codes[:50]
+        print(f"LOCAL_TEST: capping to 50 funds")
+        all_codes = all_codes[:50]
 
-    # 3. Managers + profiles
+    # 2. Managers + profiles
     await load_managers(pool)
     await load_manager_profiles(pool)
 
-    # 4 + 5. ETF price history + NAV — run concurrently (each uses CONCURRENCY workers)
-    print(f"\nLoading ETF prices + NAV concurrently ({len(etf_codes)} ETFs, {PRICE_START}–{PRICE_END})...")
-    with Progress(
-        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
-        TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
-        TimeRemainingColumn(), TextColumn("[cyan]{task.description}"),
-        refresh_per_second=4,
-    ) as shared_prog:
-        await asyncio.gather(
-            load_etf_prices(pool, etf_codes, progress=shared_prog),
-            load_etf_navs(pool, etf_codes, progress=shared_prog),
-        )
+    # 3. NAV for all funds
+    print(f"\nLoading fund NAV ({len(all_codes):,} funds, {PRICE_START}–{PRICE_END})...")
+    await load_fund_navs(pool, all_codes)
 
-    # 6. Open fund NAV (skip in LOCAL_TEST — too many funds)
-    if not LOCAL_TEST:
-        print("\nLoading open fund NAV...")
-        await load_open_fund_navs(pool)
+    # 4. Fund rank snapshot
+    print("\nLoading fund rank...")
+    await load_fund_rank(pool)
 
-    # 7. Fees via fund_overview_em (ETFs only; skip with SKIP_OVERVIEW=1)
-    if not SKIP_OVERVIEW:
-        print(f"\nLoading fund overview/fees ({len(etf_codes)} ETFs)...")
-        await load_fees(pool, etf_codes)
-    else:
-        print("SKIP_OVERVIEW=1 — skipping fund_overview_em")
-
-    # 8. Holdings
-    print(f"\nLoading holdings ({len(etf_codes)} ETFs, {START_YEAR}–present)...")
-    await load_holdings(pool, etf_codes)
+    # 5. Fund ratings
+    print("\nLoading fund ratings...")
+    await load_fund_ratings(pool)
 
     await pool.close()
     print("\nDone.")

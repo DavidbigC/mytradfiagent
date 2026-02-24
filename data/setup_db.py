@@ -199,8 +199,23 @@ CREATE TABLE IF NOT EXISTS fund_nav (
     unit_nav         NUMERIC(12,4),
     accum_nav        NUMERIC(12,4),
     daily_return_pct NUMERIC(8,4),
+    sub_status       TEXT,
+    redeem_status    TEXT,
     PRIMARY KEY (fund_code, date)
 )
+""")
+# Migration: add columns if table already exists without them
+cur.execute("""
+    DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name='fund_nav' AND column_name='sub_status') THEN
+            ALTER TABLE fund_nav ADD COLUMN sub_status TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name='fund_nav' AND column_name='redeem_status') THEN
+            ALTER TABLE fund_nav ADD COLUMN redeem_status TEXT;
+        END IF;
+    END$$
 """)
 cur.execute("CREATE INDEX IF NOT EXISTS fund_nav_code_date ON fund_nav (fund_code, date DESC)")
 
@@ -244,6 +259,49 @@ CREATE TABLE IF NOT EXISTS fund_manager_profiles (
     total_aum       NUMERIC(20,2),
     best_return_pct NUMERIC(8,2),
     updated_at      TIMESTAMPTZ DEFAULT now()
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_rank (
+    fund_code               TEXT,
+    date                    DATE,
+    rank                    INT,
+    name                    TEXT,
+    unit_nav                NUMERIC(12,4),
+    accum_nav               NUMERIC(12,4),
+    daily_return_pct        NUMERIC(8,4),
+    return_1w               NUMERIC(8,4),
+    return_1m               NUMERIC(8,4),
+    return_3m               NUMERIC(8,4),
+    return_6m               NUMERIC(8,4),
+    return_1y               NUMERIC(8,4),
+    return_2y               NUMERIC(8,4),
+    return_3y               NUMERIC(8,4),
+    return_ytd              NUMERIC(8,4),
+    return_since_inception  NUMERIC(12,4),
+    return_custom           NUMERIC(12,4),
+    fee                     TEXT,
+    updated_at              TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (fund_code, date)
+)
+""")
+cur.execute("CREATE INDEX IF NOT EXISTS fund_rank_date ON fund_rank (date DESC)")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS fund_rating (
+    fund_code           TEXT PRIMARY KEY,
+    name                TEXT,
+    managers            TEXT,
+    company             TEXT,
+    five_star_count     INT,
+    rating_shzq         NUMERIC(4,1),
+    rating_zszq         NUMERIC(4,1),
+    rating_jajx         NUMERIC(4,1),
+    rating_morningstar  NUMERIC(4,1),
+    fee                 NUMERIC(8,6),
+    type                TEXT,
+    updated_at          TIMESTAMPTZ DEFAULT now()
 )
 """)
 
