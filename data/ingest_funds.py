@@ -14,6 +14,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
+import pandas as pd
 import akshare as ak
 import asyncpg
 from dotenv import load_dotenv
@@ -195,8 +196,8 @@ def _fetch_etf_nav(code: str) -> tuple[str, list]:
                 d = r["净值日期"] if isinstance(r["净值日期"], date) else date.fromisoformat(str(r["净值日期"]))
                 rows.append((
                     code, d,
-                    float(r["单位净值"])  if r.get("单位净值")  else None,
-                    float(r["累计净值"])  if r.get("累计净值")  else None,
+                    float(r["单位净值"])  if pd.notna(r.get("单位净值"))  else None,
+                    float(r["累计净值"])  if pd.notna(r.get("累计净值"))  else None,
                     _parse_rate(r.get("日增长率")),
                 ))
             except Exception:
@@ -251,7 +252,10 @@ async def load_open_fund_navs(pool: asyncpg.Pool):
     # Detect date-prefixed NAV columns (format: YYYY-MM-DD-单位净值)
     unit_col = next((c for c in df.columns if c.endswith("-单位净值")), None)
     accum_col = next((c for c in df.columns if c.endswith("-累计净值")), None)
-    today = date.today()
+    if unit_col is None and accum_col is None:
+        print("  WARNING: no NAV columns detected in fund_open_fund_daily_em response")
+        return
+    nav_date = date.fromisoformat(unit_col[:-len("-单位净值")]) if unit_col else date.today()
     rows = []
     for _, r in df.iterrows():
         raw_code = str(r.get("基金代码") or "").strip()
@@ -259,9 +263,9 @@ async def load_open_fund_navs(pool: asyncpg.Pool):
             continue
         try:
             rows.append((
-                raw_code.zfill(6), today,
-                float(r[unit_col])  if unit_col and r.get(unit_col)  else None,
-                float(r[accum_col]) if accum_col and r.get(accum_col) else None,
+                raw_code.zfill(6), nav_date,
+                float(r[unit_col])  if unit_col and pd.notna(r.get(unit_col))  else None,
+                float(r[accum_col]) if accum_col and pd.notna(r.get(accum_col)) else None,
                 _parse_rate(r.get("日增长率")),
             ))
         except Exception:
