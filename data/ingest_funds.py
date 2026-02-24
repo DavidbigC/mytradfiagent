@@ -370,8 +370,10 @@ def _fetch_holdings(code: str, year: int) -> tuple[str, int, list]:
                 raw_code  = str(r.get("股票代码") or "").strip()
                 if not quarter or not raw_code:
                     continue
+                if raw_code.isdigit():
+                    raw_code = raw_code.zfill(6)
                 rows.append((
-                    code, quarter, "stock",
+                    code, quarter, "stock",  # fund_portfolio_hold_em only returns equity holdings
                     raw_code,
                     str(r.get("股票名称") or ""),
                     float(r["占净值比例"]) if pd.notna(r.get("占净值比例")) else None,
