@@ -13,7 +13,7 @@ import asyncio
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import akshare as ak
@@ -170,11 +170,11 @@ async def load_manager_profiles(pool: asyncpg.Pool):
 
 # ── 3. ETF price history ──────────────────────────────────────────────────────
 
-def _fetch_etf_price(code: str) -> tuple[str, list]:
+def _fetch_etf_price(code: str, start: str) -> tuple[str, list]:
     try:
         df = ak.fund_etf_hist_em(
             symbol=code, period="daily",
-            start_date=PRICE_START, end_date=PRICE_END, adjust="",
+            start_date=start, end_date=PRICE_END, adjust="",
         )
         rows = []
         for _, r in df.iterrows():
@@ -204,14 +204,28 @@ async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str], *, progress:
     total_rows = 0
     errors: list[str] = []
 
+    # Bulk-fetch latest stored date per code — only fetch missing data
+    async with pool.acquire() as conn:
+        rows_db = await conn.fetch(
+            "SELECT fund_code, MAX(date) AS last_date FROM fund_price"
+            " WHERE fund_code = ANY($1) GROUP BY fund_code",
+            etf_codes,
+        )
+
+    latest: dict[str, str] = {
+        r["fund_code"]: (r["last_date"] + timedelta(days=1)).strftime("%Y%m%d")
+        for r in rows_db
+    }
+
     async def _run(prog: Progress) -> None:
         nonlocal total_rows
         task = prog.add_task("ETF prices...", total=len(etf_codes))
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             async def process_one(code: str):
                 nonlocal total_rows
+                start = latest.get(code, PRICE_START)
                 async with sem:
-                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_price, code)
+                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_price, code, start)
                     if rows:
                         async with pool.acquire() as conn:
                             await conn.executemany("""
@@ -242,9 +256,9 @@ async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str], *, progress:
 
 # ── 4. NAV ────────────────────────────────────────────────────────────────────
 
-def _fetch_etf_nav(code: str) -> tuple[str, list]:
+def _fetch_etf_nav(code: str, start: str) -> tuple[str, list]:
     try:
-        df = ak.fund_etf_fund_info_em(fund=code, start_date=PRICE_START, end_date=PRICE_END)
+        df = ak.fund_etf_fund_info_em(fund=code, start_date=start, end_date=PRICE_END)
         rows = []
         for _, r in df.iterrows():
             try:
@@ -274,14 +288,28 @@ async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str], *, progress: P
     total_rows = 0
     errors: list[str] = []
 
+    # Bulk-fetch latest stored date per code — only fetch missing data
+    async with pool.acquire() as conn:
+        rows_db = await conn.fetch(
+            "SELECT fund_code, MAX(date) AS last_date FROM fund_nav"
+            " WHERE fund_code = ANY($1) GROUP BY fund_code",
+            etf_codes,
+        )
+
+    latest: dict[str, str] = {
+        r["fund_code"]: (r["last_date"] + timedelta(days=1)).strftime("%Y%m%d")
+        for r in rows_db
+    }
+
     async def _run(prog: Progress) -> None:
         nonlocal total_rows
         task = prog.add_task("ETF NAV...", total=len(etf_codes))
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             async def process_one(code: str):
                 nonlocal total_rows
+                start = latest.get(code, PRICE_START)
                 async with sem:
-                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_nav, code)
+                    code_out, rows = await loop.run_in_executor(executor, _fetch_etf_nav, code, start)
                     if rows:
                         async with pool.acquire() as conn:
                             await conn.executemany("""
