@@ -580,7 +580,7 @@ async def _run_agent_fast_inner(
     on_token: Callable | None = None,
 ) -> dict:
     from config import get_fast_system_prompt
-    from tools.web import _grok_web_search
+    from tools.web import grok_web_search_stream
 
     user_id_context.set(user_id)
 
@@ -602,12 +602,17 @@ async def _run_agent_fast_inner(
     messages = await load_recent_messages(conv_id)
     await save_message(conv_id, "user", user_message)
 
-    # Single call: Grok Responses API with live web_search — already returns a clean cited answer
+    # Stream Grok Responses API with live web_search — tokens arrive as Grok generates
     await _emit("⚡ Fast Mode · Searching...")
-    search = await _grok_web_search(user_message)
+    collected: list[str] = []
 
-    answer = search.get("answer") or ""
-    sources = search.get("sources") or []
+    async def _on_token(chunk: str):
+        collected.append(chunk)
+        await _emit_token(chunk)
+
+    sources = await grok_web_search_stream(user_message, _on_token)
+
+    answer = "".join(collected)
 
     # Append deduplicated [references] block
     seen: set[str] = set()
@@ -620,16 +625,11 @@ async def _run_agent_fast_inner(
 
     if ref_lines:
         refs = "\n".join(f"[{i+1}] {u}" for i, u in enumerate(ref_lines))
-        response_text = f"{answer}\n\n[references]\n{refs}\n[/references]"
+        suffix = f"\n\n[references]\n{refs}\n[/references]"
+        await _emit_token(suffix)
+        response_text = answer + suffix
     else:
         response_text = answer
-
-    # Emit as tokens so the frontend renders incrementally
-    if on_token:
-        chunk_size = 40
-        for i in range(0, len(response_text), chunk_size):
-            await _emit_token(response_text[i:i + chunk_size])
-            await asyncio.sleep(0)  # yield to event loop between chunks
 
     logger.info(f"Fast mode response: {len(response_text)} chars, {len(ref_lines)} sources")
     await save_message(conv_id, "assistant", response_text)

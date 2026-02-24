@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import httpx
+from typing import Callable
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 from config import TAVILY_API_KEY, GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
@@ -90,7 +91,6 @@ async def _grok_web_search(query: str) -> dict:
             tools=[{"type": "web_search"}],
             max_output_tokens=500,
         )
-        # Find the message output item
         content = ""
         sources = []
         for item in response.output:
@@ -98,19 +98,64 @@ async def _grok_web_search(query: str) -> dict:
                 for c in item.content:
                     if c.type == "output_text":
                         content = c.text
-                        # Citations come back as url_citation annotations
                         for ann in getattr(c, "annotations", []):
                             if ann.type == "url_citation":
                                 sources.append({"url": ann.url, "title": ann.title or ""})
                         break
                 break
-        if len(content) > 2000:
-            content = content[:2000] + "...[truncated]"
         logger.info(f"Grok web search: {len(sources)} citations, {len(content)} chars for '{query[:60]}'")
         return {"answer": content, "sources": sources}
     except Exception as e:
         logger.warning(f"Grok web search failed ({e}), falling back to DuckDuckGo")
         return await asyncio.to_thread(_ddg_search_sync, query)
+
+
+async def grok_web_search_stream(query: str, on_token: Callable) -> list[dict]:
+    """Stream Grok Responses API with live web_search. Emits tokens as they arrive.
+
+    Returns list of source dicts [{url, title}] when complete.
+    Falls back to non-streaming _grok_web_search on error.
+    """
+    if not _grok_client:
+        result = await asyncio.to_thread(_ddg_search_sync, query)
+        answer = result.get("answer") or ""
+        if on_token and answer:
+            await on_token(answer)
+        return result.get("sources", [])
+    try:
+        sources: list[dict] = []
+        async with _grok_client.responses.stream(
+            model=GROK_MODEL_NOREASONING,
+            input=[{"role": "user", "content": query}],
+            tools=[{"type": "web_search"}],
+            max_output_tokens=600,
+        ) as stream:
+            async for event in stream:
+                etype = getattr(event, "type", None)
+                if etype == "response.output_text.delta":
+                    delta = getattr(event, "delta", "") or ""
+                    if delta and on_token:
+                        await on_token(delta)
+                elif etype == "response.completed":
+                    # Extract citations from completed response
+                    resp = getattr(event, "response", None)
+                    if resp:
+                        for item in getattr(resp, "output", []):
+                            if getattr(item, "type", None) == "message":
+                                for c in getattr(item, "content", []):
+                                    if getattr(c, "type", None) == "output_text":
+                                        for ann in getattr(c, "annotations", []):
+                                            if getattr(ann, "type", None) == "url_citation":
+                                                sources.append({"url": ann.url, "title": ann.title or ""})
+        logger.info(f"Grok stream search: {len(sources)} citations for '{query[:60]}'")
+        return sources
+    except Exception as e:
+        logger.warning(f"Grok stream search failed ({e}), falling back to non-streaming")
+        result = await _grok_web_search(query)
+        answer = result.get("answer") or ""
+        if on_token and answer:
+            await on_token(answer)
+        return result.get("sources", [])
 
 
 _TAVILY_SEARCH_URL = "https://api.tavily.com/search"
