@@ -1,5 +1,51 @@
 # Changes
 
+## 2026-02-24 — Fund data ingestion complete
+
+**What:** Added 6 fund tables to marketdata DB and two scripts for initial bulk load and daily incremental updates using AKShare.
+
+**Files:**
+- `data/setup_db.py` — modified: added funds, fund_managers, fund_fees, fund_nav, fund_price, fund_holdings tables
+- `data/ingest_funds.py` — created: initial bulk load (catalog, managers, fees, ETF prices, ETF NAV, open fund NAV, quarterly holdings)
+- `data/update_funds.py` — created: daily incremental (NAV bulk, ETF prices, manager SCD type 2 change detection)
+
+**Details:**
+- ETF price + NAV: concurrent asyncio.gather with shared Progress bar; 5 workers each via Semaphore + ThreadPoolExecutor
+- NaT guard: explicit `raw_d is pd.NaT` and `isinstance(d, date)` check prevents NaT from reaching asyncpg
+- Manager history: SCD type 2 (start_date/end_date); daily diff against fund_manager_em() output
+- Fees: fund_overview_em per ETF; fee strings like "0.15%（每年）" parsed via regex
+- Holdings: fund_portfolio_hold_em per ETF per year, quarterly granularity
+- LOCAL_TEST=1 limits to 50 ETFs; SKIP_OVERVIEW=1 skips slow per-fund overview calls (~2h)
+- NAV columns are date-prefixed (e.g. "2026-02-13-单位净值"); date derived from column name prefix
+- Cron: `python data/update_funds.py` daily; add `--check-managers` weekly
+
+## 2026-02-23 — Create ingest_funds.py with catalog and manager loaders
+
+**What:** Created `data/ingest_funds.py` with boilerplate, config constants, helpers, and the first two loaders: `load_catalog()` and `load_managers()`.
+
+**Files:**
+- `data/ingest_funds.py` — created
+
+**Details:**
+- Module docstring documents all environment variables (MARKETDATA_URL, CONCURRENCY, LOCAL_TEST, SKIP_OVERVIEW, PRICE_START, START_YEAR)
+- Helpers: `_build_dsn()`, `_derive_exchange(code)`, `_parse_rate(val)`, `get_etf_codes()`
+- `load_catalog()` fetches from `ak.fund_name_em()`, upserts 26,135 funds into `funds` table
+- `load_managers()` fetches from `ak.fund_manager_em()`, inserts 33,602 manager-fund rows into `fund_managers` table (skips codes not in `funds`)
+- Smoke test confirmed actual column names match: `基金代码`/`基金简称`/`基金类型` and `现任基金代码`/`姓名`
+
+## 2026-02-23 — Add fund tables schema to setup_db
+
+**What:** Appended Step 4 to `data/setup_db.py` creating 6 new fund-related tables in the `marketdata` database.
+
+**Files:**
+- `data/setup_db.py` — modified (added fund table DDL after financials step)
+
+**Details:**
+- Tables created: `funds`, `fund_managers`, `fund_fees`, `fund_nav`, `fund_price`, `fund_holdings`
+- `fund_managers` and `fund_fees` have FK references to `funds(code)`; `funds` is created first to satisfy FK ordering
+- Indexes added: `fund_managers_code`, `fund_nav_code_date`, `fund_price_code_date`, `fund_holdings_code_q`
+- All 6 tables verified present in `marketdata` database after running the script
+
 ## 2026-02-23 — Redirect complex novel TA requests to suitable alternatives
 
 **What:** Added a system prompt rule so the agent politely explains LLM limitations with complex pattern-based TA theories (缠论, 波浪理论, 江恩理论, etc.) and suggests better-suited alternatives (oscillators, indicators, backtesting, fundamentals).
@@ -1413,3 +1459,42 @@
 - HTML charts open via `window.open` with the token as a query param (no Authorization header needed since the file is served directly).
 - The new filter tab appears after "Markdown" in ReportsPanel.
 - TypeScript check (`tsc --noEmit`) passed with zero errors.
+
+## 2026-02-23 — Fix docstring and document deliberate FK omissions in setup_db
+
+**What:** Updated module docstring to mention fund tables and added inline SQL comments explaining why fund_nav, fund_price, and fund_holdings omit foreign keys to funds.
+
+**Files:**
+- `data/setup_db.py` — modified (docstring update, FK omission comments)
+
+**Details:**
+- Docstring now reads: "creates the marketdata database, ohlcv_5m, financials, and fund tables."
+- Added `-- no FK to funds: high-volume append table` comment on `fund_code` column in fund_nav, fund_price, and fund_holdings DDL statements.
+
+## 2026-02-24 — Fund overview and fees loader
+
+**What:** Added `_fetch_overview()` sync worker and `load_fees()` async orchestrator to `data/ingest_funds.py`; also fixed `_parse_rate()` to handle fee strings with trailing Chinese text (e.g. `"0.15%（每年）"`).
+
+**Files:**
+- `data/ingest_funds.py` — modified (added `re` import, fixed `_parse_rate`, added `_fetch_overview` and `load_fees`)
+
+**Details:**
+- `fund_overview_em` returns a DataFrame (one row), not a Series — access via `s.iloc[0]`
+- Inception date column is `成立日期/规模` (format: `"YYYY年MM月DD日 / ..."`) — extracted to ISO with regex; SQL regex `^\d{4}-\d{2}-\d{2}$` then validates before casting to `DATE`
+- Fee values include trailing `（每年）` suffix — `_parse_rate` updated to use `re.search(r"[-+]?\d+\.?\d*", ...)` instead of simple `%` strip + float cast
+- `load_fees` follows established patterns: `get_running_loop()`, `Semaphore(CONCURRENCY)`, `ThreadPoolExecutor`, Rich progress bar, success counter printed at end
+
+## 2026-02-24 — Quarterly holdings loader
+
+**What:** Added `_fetch_holdings` and `load_holdings` to `data/ingest_funds.py` to load quarterly stock holdings for each fund across all years from `START_YEAR` to the current year.
+
+**Files:**
+- `data/ingest_funds.py` — modified (appended section 6)
+
+**Details:**
+- Actual column names confirmed: `序号, 股票代码, 股票名称, 占净值比例, 持股数, 持仓市值, 季度` — matched plan exactly, no changes needed
+- `季度` values are full strings like `"2024年1季度股票投资明细"`, stored as-is in the `quarter` column
+- `raw_code` (security/stock codes) left as-is with no `zfill` — they are 6-char stock codes already
+- `pd.notna()` guards used for all three nullable numeric fields: `占净值比例`, `持股数`, `持仓市值`
+- Uses `asyncio.get_running_loop()` + `ThreadPoolExecutor` pattern consistent with other loaders
+- Tracks `empty_count` for fund/year combos that returned no data
