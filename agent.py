@@ -602,36 +602,38 @@ async def _run_agent_fast_inner(
     messages = await load_recent_messages(conv_id)
     await save_message(conv_id, "user", user_message)
 
-    # Step 1: live web search via Grok Responses API
-    await _emit("⚡ Fast Mode · Searching live data...")
+    # Single call: Grok Responses API with live web_search — already returns a clean cited answer
+    await _emit("⚡ Fast Mode · Searching...")
     search = await _grok_web_search(user_message)
 
-    # Build search context block to inject into the user turn
-    search_context = ""
-    if search.get("answer"):
-        search_context = f"\n\n[实时搜索结果]\n{search['answer']}"
-        if search.get("sources"):
-            urls = "\n".join(s["url"] for s in search["sources"][:10] if s.get("url"))
-            search_context += f"\n\n可用来源:\n{urls}"
+    answer = search.get("answer") or ""
+    sources = search.get("sources") or []
 
-    augmented_message = user_message + search_context if search_context else user_message
+    # Append deduplicated [references] block
+    seen: set[str] = set()
+    ref_lines: list[str] = []
+    for s in sources:
+        url = s.get("url", "")
+        if url and url not in seen:
+            seen.add(url)
+            ref_lines.append(url)
 
-    # Step 2: stream a clean summary via Grok chat completions
-    await _emit("⚡ Fast Mode · Summarizing...")
-    system_msg = {"role": "system", "content": get_fast_system_prompt()}
-    full_messages = [system_msg] + messages + [{"role": "user", "content": augmented_message}]
+    if ref_lines:
+        refs = "\n".join(f"[{i+1}] {u}" for i, u in enumerate(ref_lines))
+        response_text = f"{answer}\n\n[references]\n{refs}\n[/references]"
+    else:
+        response_text = answer
 
-    response_text, _, _ = await _stream_llm_response(
-        full_messages, None,
-        on_token=_emit_token, on_thinking_chunk=None,
-        max_tokens=1500,
-        client_override=_grok_client,
-        model_override=_grok_model,
-    )
+    # Emit as tokens so the frontend renders incrementally
+    if on_token:
+        chunk_size = 40
+        for i in range(0, len(response_text), chunk_size):
+            await _emit_token(response_text[i:i + chunk_size])
+            await asyncio.sleep(0)  # yield to event loop between chunks
 
-    logger.info(f"Fast mode response: {len(response_text or '')} chars")
-    await save_message(conv_id, "assistant", response_text or "")
-    return {"text": response_text or "", "files": []}
+    logger.info(f"Fast mode response: {len(response_text)} chars, {len(ref_lines)} sources")
+    await save_message(conv_id, "assistant", response_text)
+    return {"text": response_text, "files": []}
 
 
 async def run_debate(
