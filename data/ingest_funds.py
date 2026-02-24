@@ -179,7 +179,11 @@ def _fetch_etf_price(code: str, start: str) -> tuple[str, list]:
         rows = []
         for _, r in df.iterrows():
             try:
-                d = r["日期"] if isinstance(r["日期"], date) else date.fromisoformat(str(r["日期"]))
+                raw_d = r["日期"]
+                if hasattr(raw_d, "date") and callable(raw_d.date):
+                    d = raw_d.date()  # pd.Timestamp → strips tz, gives datetime.date
+                else:
+                    d = date.fromisoformat(str(raw_d))
                 rows.append((
                     code, d,
                     float(r["开盘"])   if r["开盘"]   else None,
