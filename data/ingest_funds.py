@@ -159,18 +159,15 @@ def _fetch_etf_price(code: str) -> tuple[str, list]:
         return code, []
 
 
-async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str]):
+async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str], *, progress: Progress | None = None):
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(CONCURRENCY)
     total_rows = 0
     errors: list[str] = []
-    with Progress(
-        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
-        TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
-        TimeRemainingColumn(), TextColumn("[cyan]{task.description}"),
-        refresh_per_second=4,
-    ) as progress:
-        task = progress.add_task("ETF prices...", total=len(etf_codes))
+
+    async def _run(prog: Progress) -> None:
+        nonlocal total_rows
+        task = prog.add_task("ETF prices...", total=len(etf_codes))
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             async def process_one(code: str):
                 nonlocal total_rows
@@ -187,9 +184,20 @@ async def load_etf_prices(pool: asyncpg.Pool, etf_codes: list[str]):
                         total_rows += len(rows)
                     else:
                         errors.append(code_out)
-                    progress.update(task, advance=1,
-                        description=f"{code_out} {len(rows)} rows ({total_rows:,} total)")
+                    prog.update(task, advance=1,
+                        description=f"price {code_out} {len(rows)}r ({total_rows:,} total)")
             await asyncio.gather(*[process_one(c) for c in etf_codes])
+
+    if progress is not None:
+        await _run(progress)
+    else:
+        with Progress(
+            SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+            TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
+            TimeRemainingColumn(), TextColumn("[cyan]{task.description}"),
+            refresh_per_second=4,
+        ) as prog:
+            await _run(prog)
     print(f"  ETF prices: {total_rows:,} rows. {len(errors)} codes returned no data.")
 
 
@@ -201,7 +209,12 @@ def _fetch_etf_nav(code: str) -> tuple[str, list]:
         rows = []
         for _, r in df.iterrows():
             try:
-                d = r["净值日期"] if isinstance(r["净值日期"], date) else date.fromisoformat(str(r["净值日期"]))
+                raw_d = r["净值日期"]
+                if raw_d is None or raw_d is pd.NaT or not pd.notna(raw_d):
+                    continue
+                d = raw_d.date() if hasattr(raw_d, "date") else date.fromisoformat(str(raw_d))
+                if not isinstance(d, date):
+                    continue
                 rows.append((
                     code, d,
                     float(r["单位净值"])  if pd.notna(r.get("单位净值"))  else None,
@@ -215,18 +228,16 @@ def _fetch_etf_nav(code: str) -> tuple[str, list]:
         return code, []
 
 
-async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str]):
+async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str], *, progress: Progress | None = None):
     """Load NAV history for all ETFs from fund_etf_fund_info_em."""
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(CONCURRENCY)
     total_rows = 0
     errors: list[str] = []
-    with Progress(
-        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
-        TaskProgressColumn(), TimeElapsedColumn(),
-        TextColumn("[cyan]{task.description}"), refresh_per_second=4,
-    ) as progress:
-        task = progress.add_task("ETF NAV...", total=len(etf_codes))
+
+    async def _run(prog: Progress) -> None:
+        nonlocal total_rows
+        task = prog.add_task("ETF NAV...", total=len(etf_codes))
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             async def process_one(code: str):
                 nonlocal total_rows
@@ -242,9 +253,19 @@ async def load_etf_navs(pool: asyncpg.Pool, etf_codes: list[str]):
                         total_rows += len(rows)
                     else:
                         errors.append(code_out)
-                    progress.update(task, advance=1,
-                        description=f"{code_out} {len(rows)} rows ({total_rows:,} total)")
+                    prog.update(task, advance=1,
+                        description=f"nav  {code_out} {len(rows)}r ({total_rows:,} total)")
             await asyncio.gather(*[process_one(c) for c in etf_codes])
+
+    if progress is not None:
+        await _run(progress)
+    else:
+        with Progress(
+            SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+            TaskProgressColumn(), TimeElapsedColumn(),
+            TextColumn("[cyan]{task.description}"), refresh_per_second=4,
+        ) as prog:
+            await _run(prog)
     print(f"  ETF NAVs: {total_rows:,} rows. {len(errors)} codes returned no data.")
 
 
@@ -423,3 +444,58 @@ async def load_holdings(pool: asyncpg.Pool, codes: list[str]):
                         description=f"{code_out}/{yr} {len(rows)} rows ({total_rows:,} total)")
             await asyncio.gather(*[process_one(c, y) for c, y in tasks_list])
     print(f"  Holdings: {total_rows:,} rows. {empty_count} fund/year combos returned no data.")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+async def main():
+    pool = await asyncpg.create_pool(_build_dsn(), min_size=2, max_size=CONCURRENCY + 2)
+
+    # 1. Catalog
+    await load_catalog(pool)
+
+    # 2. ETF code list
+    print("Fetching ETF list...")
+    etf_codes = get_etf_codes()
+    if LOCAL_TEST:
+        print(f"LOCAL_TEST: capping to 50 ETFs")
+        etf_codes = etf_codes[:50]
+
+    # 3. Managers
+    await load_managers(pool)
+
+    # 4 + 5. ETF price history + NAV — run concurrently (each uses CONCURRENCY workers)
+    print(f"\nLoading ETF prices + NAV concurrently ({len(etf_codes)} ETFs, {PRICE_START}–{PRICE_END})...")
+    with Progress(
+        SpinnerColumn(), MofNCompleteColumn(), BarColumn(),
+        TaskProgressColumn(), TimeElapsedColumn(), TextColumn("ETA:"),
+        TimeRemainingColumn(), TextColumn("[cyan]{task.description}"),
+        refresh_per_second=4,
+    ) as shared_prog:
+        await asyncio.gather(
+            load_etf_prices(pool, etf_codes, progress=shared_prog),
+            load_etf_navs(pool, etf_codes, progress=shared_prog),
+        )
+
+    # 6. Open fund NAV (skip in LOCAL_TEST — too many funds)
+    if not LOCAL_TEST:
+        print("\nLoading open fund NAV...")
+        await load_open_fund_navs(pool)
+
+    # 7. Fees via fund_overview_em (ETFs only; skip with SKIP_OVERVIEW=1)
+    if not SKIP_OVERVIEW:
+        print(f"\nLoading fund overview/fees ({len(etf_codes)} ETFs)...")
+        await load_fees(pool, etf_codes)
+    else:
+        print("SKIP_OVERVIEW=1 — skipping fund_overview_em")
+
+    # 8. Holdings
+    print(f"\nLoading holdings ({len(etf_codes)} ETFs, {START_YEAR}–present)...")
+    await load_holdings(pool, etf_codes)
+
+    await pool.close()
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
