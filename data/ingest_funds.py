@@ -53,9 +53,13 @@ def _derive_exchange(code: str) -> str | None:
 
 
 def _parse_rate(val) -> float | None:
-    if val is None or str(val).strip() in ("", "-", "--"):
+    if val is None or str(val).strip() in ("", "-", "--", "---"):
         return None
-    m = re.search(r"[-+]?\d+\.?\d*", str(val))
+    s = str(val).strip()
+    # Only parse if value looks like a percentage or plain number — not a Chinese description
+    if "%" not in s and not re.match(r"^[-+]?\d+\.?\d*$", s):
+        return None
+    m = re.search(r"[-+]?\d+\.?\d*", s)
     if not m:
         return None
     try:
