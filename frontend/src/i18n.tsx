@@ -13,6 +13,7 @@ const translations = {
   // Sidebar
   "sidebar.newChat": { en: "+ New Chat", zh: "+ 新对话" },
   "sidebar.debate": { en: "Hypothesis Debate", zh: "假设辩论" },
+  "sidebar.thinking": { en: "🧠 Thinking Mode", zh: "🧠 思考模式" },
   "sidebar.delete": { en: "Delete", zh: "删除" },
   "sidebar.admin": { en: "Admin", zh: "管理" },
   "sidebar.logout": { en: "Logout", zh: "退出" },

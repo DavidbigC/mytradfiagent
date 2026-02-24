@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../store";
 import { useT } from "../i18n";
-import { fetchConversations, createConversation, deleteConversation, toggleConversationShare } from "../api";
+import { fetchConversations, createConversation, deleteConversation, toggleConversationShare, updateConversationMode } from "../api";
 import Sidebar from "../components/Sidebar";
 import ChatView from "../components/ChatView";
 
@@ -25,8 +25,11 @@ export default function ChatLayout() {
   const [pendingDebate, setPendingDebate] = useState<string | null>(null);
   const debateInputRef = useRef<HTMLTextAreaElement>(null);
 
+  const [preferredMode, setPreferredMode] = useState<string>("fast");
+
   const activeConv = conversations.find((c) => c.id === activeId);
-  const activeMode = activeConv?.mode ?? "normal";
+  // When a conversation is selected use its stored mode; otherwise show the user's current preference
+  const activeMode = activeConv?.mode ?? preferredMode;
 
   const loadConversations = useCallback(async () => {
     if (!token) return;
@@ -52,9 +55,23 @@ export default function ChatLayout() {
   async function handleNew() {
     if (!token) return;
     try {
-      const { id } = await createConversation(token);
+      const { id } = await createConversation(token, preferredMode);
       setActiveId(id);
       await loadConversations();
+    } catch (err: any) {
+      if (err.message === "UNAUTHORIZED") logout();
+    }
+  }
+
+  async function handleSwitchMode(mode: string) {
+    setPreferredMode(mode);
+    if (!activeId || !token) return;
+    // Optimistic update — show new mode immediately
+    setConversations((prev) =>
+      prev.map((c) => c.id === activeId ? { ...c, mode } : c)
+    );
+    try {
+      await updateConversationMode(token, activeId, mode);
     } catch (err: any) {
       if (err.message === "UNAUTHORIZED") logout();
     }
@@ -148,6 +165,7 @@ export default function ChatLayout() {
           pendingDebate={pendingDebate}
           onDebateStarted={() => setPendingDebate(null)}
           conversationMode={activeMode}
+          onSwitchMode={handleSwitchMode}
         />
       </main>
 

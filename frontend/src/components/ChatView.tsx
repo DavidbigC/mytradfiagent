@@ -52,9 +52,10 @@ interface Props {
   pendingDebate?: string | null;
   onDebateStarted?: () => void;
   conversationMode?: string;
+  onSwitchMode?: (mode: string) => void;
 }
 
-export default function ChatView({ conversationId, onConversationCreated, pendingDebate, onDebateStarted, conversationMode = "normal" }: Props) {
+export default function ChatView({ conversationId, onConversationCreated, pendingDebate, onDebateStarted, conversationMode = "fast", onSwitchMode }: Props) {
   const { token, logout } = useAuth();
   const { t, lang } = useT();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -230,6 +231,9 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
     // Optimistically add user message
     setMessages((prev) => [...prev, { role: "user", content: msg }]);
 
+    // For new conversations (no id yet), tell the backend which mode to create them in.
+    // For existing conversations, pass nothing — backend reads the mode from DB.
+    const effectiveMode = mode || (conversationId === null ? conversationMode : undefined);
     abortRef.current = sendMessage(token, msg, conversationId, {
       onStatus: (text) => setStatus(text),
       onThinking: (data) => {
@@ -288,7 +292,7 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
         setStatus(null);
         setSending(false);
       },
-    }, mode);
+    }, effectiveMode);
   }
 
   function confirmModePicker(chosenMode?: string) {
@@ -441,6 +445,18 @@ export default function ChatView({ conversationId, onConversationCreated, pendin
           placeholder={t("chat.placeholder")}
           rows={1}
         />
+        {onSwitchMode && conversationMode !== "debate" && (
+          <button
+            className={`mode-toggle-btn${conversationMode === "normal" ? " thinking" : ""}`}
+            onClick={() => onSwitchMode(conversationMode === "normal" ? "fast" : "normal")}
+            title={conversationMode === "normal"
+              ? (lang === "zh" ? "切换到快速模式" : "Switch to Fast Mode")
+              : (lang === "zh" ? "切换到思考模式" : "Switch to Thinking Mode")}
+            disabled={sending}
+          >
+            {conversationMode === "normal" ? "🧠" : "⚡"}
+          </button>
+        )}
         <button
           className={`mic-btn${voiceState === "recording" ? " recording" : ""}`}
           onClick={handleVoiceToggle}

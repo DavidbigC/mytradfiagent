@@ -1357,6 +1357,40 @@ body,
   background: #a93226;
 }
 
+.input-area .mode-toggle-btn {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  padding: 11px 13px;
+  font-size: 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.input-area .mode-toggle-btn.thinking {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+
+.input-area .mode-toggle-btn:hover:not(:disabled) {
+  opacity: 0.75;
+}
+
+[data-theme="dark"] .input-area .mode-toggle-btn {
+  background: rgba(254, 243, 199, 0.1);
+  color: #fcd34d;
+  border-color: rgba(252, 211, 77, 0.3);
+}
+
+[data-theme="dark"] .input-area .mode-toggle-btn.thinking {
+  background: rgba(237, 233, 254, 0.1);
+  color: #c4b5fd;
+  border-color: rgba(196, 181, 253, 0.3);
+}
+
 .input-area .mic-btn {
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -1453,6 +1487,26 @@ body,
 
 .sidebar-header .debate-btn:hover {
   background: #162028;
+}
+
+/* ── Thinking Mode Button (sidebar) ── */
+.sidebar-header .thinking-btn {
+  width: 100%;
+  background: #2d1f38;
+  color: #e8dcc8;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: background 0.2s;
+}
+
+.sidebar-header .thinking-btn:hover {
+  background: #221528;
 }
 
 /* ── Debate Modal ── */
@@ -1721,6 +1775,56 @@ body,
 .mode-indicator.debate {
   background: rgba(139, 105, 20, 0.07);
   color: var(--accent);
+}
+
+.mode-indicator.fast {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #fcd34d;
+}
+
+.mode-indicator.thinking {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-bottom: 1px solid #c4b5fd;
+}
+
+[data-theme="dark"] .mode-indicator.fast {
+  background: rgba(254, 243, 199, 0.08);
+  color: #fcd34d;
+  border-bottom-color: rgba(252, 211, 77, 0.3);
+}
+
+[data-theme="dark"] .mode-indicator.thinking {
+  background: rgba(237, 233, 254, 0.08);
+  color: #c4b5fd;
+  border-bottom-color: rgba(196, 181, 253, 0.3);
+}
+
+.mode-switch-btn {
+  margin-left: 12px;
+  font-size: 0.8em;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  transition: opacity 0.15s;
+}
+
+.mode-switch-btn:hover {
+  opacity: 0.7;
+}
+
+.conv-mode-badge.fast {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+[data-theme="dark"] .conv-mode-badge.fast {
+  background: rgba(254, 243, 199, 0.15);
+  color: #fcd34d;
 }
 
 /* ── Mode Picker (ChatView inline prompt) ── */

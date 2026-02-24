@@ -9,6 +9,10 @@ from tools.cn_market import (
 )
 from tools.funds import fetch_fund_holdings, FETCH_FUND_HOLDINGS_SCHEMA
 from tools.cn_funds import fetch_cn_fund_holdings, FETCH_CN_FUND_HOLDINGS_SCHEMA
+from tools.cn_fund_data import (
+    fetch_cn_fund_data, FETCH_CN_FUND_DATA_SCHEMA,
+    run_fund_chart_script, RUN_FUND_CHART_SCRIPT_SCHEMA,
+)
 from tools.output import generate_chart, generate_pdf, GENERATE_CHART_SCHEMA, GENERATE_PDF_SCHEMA
 from tools.subagent import dispatch_subagents, DISPATCH_SUBAGENTS_SCHEMA
 from tools.sources import (
@@ -52,6 +56,8 @@ TOOL_SCHEMAS = [
     FETCH_CN_BOND_DATA_SCHEMA,
     FETCH_FUND_HOLDINGS_SCHEMA,
     FETCH_CN_FUND_HOLDINGS_SCHEMA,
+    FETCH_CN_FUND_DATA_SCHEMA,
+    RUN_FUND_CHART_SCRIPT_SCHEMA,
     GENERATE_CHART_SCHEMA,
     GENERATE_PDF_SCHEMA,
     DISPATCH_SUBAGENTS_SCHEMA,
@@ -88,6 +94,8 @@ TOOL_MAP = {
     "fetch_cn_bond_data": fetch_cn_bond_data,
     "fetch_fund_holdings": fetch_fund_holdings,
     "fetch_cn_fund_holdings": fetch_cn_fund_holdings,
+    "fetch_cn_fund_data": fetch_cn_fund_data,
+    "run_fund_chart_script": run_fund_chart_script,
     "generate_chart": generate_chart,
     "generate_pdf": generate_pdf,
     "dispatch_subagents": dispatch_subagents,

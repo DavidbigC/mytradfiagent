@@ -9,7 +9,7 @@ import time
 from typing import Callable
 from uuid import UUID
 from openai import AsyncOpenAI
-from config import get_minimax_config, get_system_prompt, get_planning_prompt
+from config import get_minimax_config, get_system_prompt, get_planning_prompt, GROK_API_KEY, GROK_BASE_URL, GROK_MODEL_NOREASONING
 from tools import TOOL_SCHEMAS, execute_tool
 from accounts import (
     get_active_conversation, get_user_lock,
@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 
 _mm_api_key, _mm_base_url, _mm_model = get_minimax_config()
 client = AsyncOpenAI(api_key=_mm_api_key, base_url=_mm_base_url)
+
+_grok_client = AsyncOpenAI(api_key=GROK_API_KEY, base_url=GROK_BASE_URL) if GROK_API_KEY else None
+_grok_model = GROK_MODEL_NOREASONING
 
 MAX_TURNS = 30
 
@@ -180,6 +183,10 @@ async def _stream_llm_response(
     tools: list | None,
     on_token: Callable | None,
     on_thinking_chunk: Callable | None = None,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    client_override: AsyncOpenAI | None = None,
+    model_override: str | None = None,
 ) -> tuple[str, list[str], list[dict]]:
     """Streaming LLM call.
 
@@ -201,15 +208,20 @@ async def _stream_llm_response(
     think_buf = ""
     think_emitted = 0  # chars of think_buf already sent via on_thinking_chunk
 
+    _client = client_override or client
+    _model = model_override or _mm_model
     create_kwargs: dict = {
-        "model": _mm_model,
+        "model": _model,
         "messages": messages,
         "stream": True,
     }
     if tools:
         create_kwargs["tools"] = tools
-    stream = await client.chat.completions.create(
+    if max_tokens:
+        create_kwargs["max_tokens"] = max_tokens
+    stream = await _client.chat.completions.create(
         **create_kwargs,
+        **({"timeout": timeout} if timeout else {}),
     )
 
     async for chunk in stream:
@@ -542,6 +554,70 @@ async def _run_agent_inner(
     await save_message(conv_id, "assistant", summary)
 
     return {"text": summary, "files": files}
+
+
+async def run_agent_fast(
+    user_message: str,
+    user_id: UUID,
+    on_status: Callable | None = None,
+    conversation_id: UUID | None = None,
+    on_thinking: Callable | None = None,
+    on_token: Callable | None = None,
+) -> dict:
+    lock = get_user_lock(user_id)
+    async with lock:
+        return await _run_agent_fast_inner(
+            user_message, user_id, on_status, conversation_id, on_thinking, on_token
+        )
+
+
+async def _run_agent_fast_inner(
+    user_message: str,
+    user_id: UUID,
+    on_status: Callable | None = None,
+    conversation_id: UUID | None = None,
+    on_thinking: Callable | None = None,
+    on_token: Callable | None = None,
+) -> dict:
+    from config import get_fast_system_prompt
+
+    user_id_context.set(user_id)
+
+    async def _emit(text: str):
+        if on_status:
+            try:
+                await on_status(text)
+            except Exception:
+                pass
+
+    async def _emit_token(tok: str):
+        if on_token:
+            try:
+                await on_token(tok)
+            except Exception:
+                pass
+
+    conv_id = conversation_id or await get_active_conversation(user_id)
+    messages = await load_recent_messages(conv_id)
+    await save_message(conv_id, "user", user_message)
+
+    system_msg = {"role": "system", "content": get_fast_system_prompt()}
+    full_messages = [system_msg] + messages + [{"role": "user", "content": user_message}]
+
+    await _emit("⚡ Fast Mode · Thinking...")
+
+    # Single call — no tools, Grok uses its built-in web search
+    response_text, _, _ = await _stream_llm_response(
+        full_messages, None,
+        on_token=_emit_token, on_thinking_chunk=None,
+        max_tokens=1500,
+        client_override=_grok_client,
+        model_override=_grok_model,
+    )
+
+    logger.info(f"Fast mode response: {len(response_text or '')} chars")
+    await save_message(conv_id, "assistant", response_text or "")
+    return {"text": response_text or "", "files": []}
 
 
 async def run_debate(

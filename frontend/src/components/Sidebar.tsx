@@ -72,6 +72,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                   {c.mode === "debate" && (
                     <span className="conv-mode-badge">{lang === "zh" ? "辩论" : "Debate"}</span>
                   )}
+                  {c.mode === "fast" && (
+                    <span className="conv-mode-badge fast">{lang === "zh" ? "快速" : "Fast"}</span>
+                  )}
                   {c.title}
                 </span>
                 <div className="conv-actions" onClick={(e) => e.stopPropagation()}>

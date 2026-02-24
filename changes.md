@@ -1,5 +1,52 @@
 # Changes
 
+## 2026-02-24 — Fast Mode (new default)
+
+**What:** Added Fast Mode as the default conversation mode — quick responses in <5s using web_search/scrape_webpage only, ending with a capability offer. Users can switch to Thinking Mode (formerly "normal") in-place via a button in the mode indicator strip, or create a Thinking Mode conversation from the sidebar.
+
+**Files:**
+- `config.py` — added `get_fast_system_prompt()`: 200-word briefing style, capability offer footer for finance queries, citation block
+- `agent.py` — added `run_agent_fast` / `_run_agent_fast_inner`: single LLM call + at most one tool round (web_search/scrape_webpage only), no planning turn
+- `api_chat.py` — updated `SendBody.mode` and `CreateConversationBody.mode` Literals to include `"fast"`; default mode for auto-created conversations changed to `"fast"`; `run_in_background` now looks up stored conversation mode from DB when body.mode is null, routing to fast/thinking/debate accordingly; added `PATCH /conversations/{conv_id}/mode` endpoint; imported `run_agent_fast`
+- `frontend/src/api.ts` — added `updateConversationMode()`
+- `frontend/src/pages/ChatLayout.tsx` — `handleNew()` creates fast conversations; added `handleSwitchToThinking()`, `handleNewThinkingConversation()`; mode indicator now shows fast/thinking/debate strips with switch button; passes `onThinking` to Sidebar
+- `frontend/src/components/Sidebar.tsx` — added `onThinking` prop, "🧠 思考模式" button, fast mode badge in conversation list
+- `frontend/src/i18n.tsx` — added `sidebar.thinking` translation
+- `frontend/src/styles/index.css` — added styles for `.mode-indicator.fast`, `.mode-indicator.thinking`, `.mode-switch-btn`, `.conv-mode-badge.fast`, `.thinking-btn` (with dark-mode variants)
+
+## 2026-02-24 — Fast mode switched to Grok with real data tools
+
+**What:** Replaced MiniMax + manual web-search pre-fetch in fast mode with Grok (`grok-4-1-fast-non-reasoning`) and a curated tool set, capped at 1500 tokens output and 1 tool round.
+
+**Files:**
+- `agent.py` — removed `_fast_search`; rewrote `_run_agent_fast_inner` to use Grok via `client_override`/`model_override`; added `_grok_client`, `_grok_model`, `_FAST_TOOL_NAMES` module-level; added `client_override`/`model_override` params to `_stream_llm_response`; imported `GROK_API_KEY`, `GROK_BASE_URL`, `GROK_MODEL_NOREASONING` from config
+
+**Details:**
+- Fast tools: web_search, scrape_webpage, fetch_cn_stock_data, fetch_multiple_cn_stocks, screen_cn_stocks, fetch_stock_data, fetch_multiple_stocks, fetch_cn_fund_data, fetch_northbound_flow, fetch_stock_capital_flow, fetch_capital_flow_ranking, scan_market_hotspots, fetch_top_shareholders, fetch_dividend_history, fetch_dragon_tiger, fetch_cn_fund_holdings
+- max_tokens=1500 on both the first call and the synthesis call
+- Heavy tools excluded: run_ta_script, generate_chart, fetch_company_report, fetch_baostock_financials, analyze_trade_opportunity, run_fund_chart_script
+
+## 2026-02-24 — Fund data analysis tools (price/NAV history + TA charts)
+
+**What:** Added two new tools for Chinese fund historical data and technical analysis charts, plus wired them into the planning prompt routing rules.
+
+**Files:**
+- `tools/cn_fund_data.py` — created; `fetch_cn_fund_data` (price/NAV history from DB with AKShare fallback) and `run_fund_chart_script` (sandboxed Plotly TA chart executor for ETF/LOF)
+- `tools/__init__.py` — modified; added imports, schemas, and TOOL_MAP entries for both new tools
+- `config.py` — modified; added fund routing rules to planning prompt and AKShare URL citations to system prompt
+
+**Details:**
+- `fetch_cn_fund_data`: queries `fund_price` (OHLCV) or `fund_nav` tables in marketdata DB; falls back to AKShare (`fund_etf_hist_em` / `fund_etf_fund_info_em`) if DB has < 5 rows; returns `chart_series` ready for `generate_chart`
+- `run_fund_chart_script`: duplicates the `ta_executor.py` sandbox pattern (import allowlist, Plotly JS-embed patch, MiniMax rewrite-on-failure loop) for daily ETF/LOF OHLCV data
+- DB access uses `asyncpg.connect()` per call (no pool) via `asyncio.new_event_loop()` inside the sync thread helper
+
+## 2026-02-24 — Fund API reference doc for agents
+
+**What:** Created comprehensive AKShare Chinese fund API reference for agents to determine which endpoint to call for any fund-related question.
+
+**Files:**
+- `docs/fund_api_reference.md` — created: covers all 62 public fund endpoints organized by category and use case, with quick decision table, parameter details, return columns, common gotchas, and code patterns
+
 ## 2026-02-24 — Fund data ingestion complete
 
 **What:** Added 6 fund tables to marketdata DB and two scripts for initial bulk load and daily incremental updates using AKShare.

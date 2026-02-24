@@ -120,6 +120,17 @@ export async function fetchMessages(token: string, convId: string, limit = 50): 
   return data;
 }
 
+export async function updateConversationMode(token: string, convId: string, mode: string) {
+  const res = await fetch(`${BASE}/api/chat/conversations/${convId}/mode`, {
+    method: "PATCH",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to update mode");
+  return res.json();
+}
+
 export async function deleteConversation(token: string, convId: string) {
   const res = await fetch(`${BASE}/api/chat/conversations/${convId}`, {
     method: "DELETE",

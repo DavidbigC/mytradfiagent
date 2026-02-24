@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from db import get_pool
 from auth import get_current_user, get_current_user_or_query_token
 from accounts import new_conversation, load_conversation_files, load_user_files
-from agent import run_agent, run_debate
+from agent import run_agent, run_debate, run_agent_fast
 from tools.output import parse_references
 
 PROJECT_ROOT = os.path.dirname(__file__)
@@ -90,11 +90,11 @@ async def _event_stream(run: AgentRun) -> asyncio.AsyncGenerator:
 class SendBody(BaseModel):
     message: str
     conversation_id: str | None = None
-    mode: Literal["normal", "debate"] | None = None
+    mode: Literal["normal", "debate", "fast"] | None = None
 
 
 class CreateConversationBody(BaseModel):
-    mode: Literal["normal", "debate"] = "normal"
+    mode: Literal["normal", "debate", "fast"] = "fast"
 
 
 @router.get("/conversations")
@@ -394,7 +394,7 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
             if owner != user_id:
                 raise HTTPException(403, "Not your conversation")
     else:
-        target_conv_id = await new_conversation(user_id)
+        target_conv_id = await new_conversation(user_id, body.mode or "fast")
 
     run = AgentRun(task=None, conv_id=target_conv_id)
 
@@ -414,10 +414,21 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
         import time as _time
         t0 = _time.time()
         try:
-            if body.mode == "debate":
+            # Determine effective mode: explicit body.mode wins; otherwise look up from DB
+            effective_mode = body.mode
+            if not effective_mode:
+                _pool = await get_pool()
+                async with _pool.acquire() as _conn:
+                    effective_mode = await _conn.fetchval(
+                        "SELECT mode FROM conversations WHERE id = $1", target_conv_id
+                    ) or "fast"
+
+            if effective_mode == "debate":
                 result = await run_debate(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking)
-            else:
+            elif effective_mode == "normal":
                 result = await run_agent(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking, on_token=on_token)
+            else:  # "fast" or any other value
+                result = await run_agent_fast(message, user_id, on_status=on_status, conversation_id=target_conv_id, on_thinking=on_thinking, on_token=on_token)
 
             elapsed = round(_time.time() - t0)
             logger.info(f"Agent completed in {elapsed}s for user {user_id}")
@@ -466,3 +477,22 @@ async def send_message(body: SendBody, user: dict = Depends(get_current_user)):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
+
+
+class ModeUpdateBody(BaseModel):
+    mode: str
+
+
+@router.patch("/conversations/{conv_id}/mode")
+async def update_conversation_mode(
+    conv_id: UUID, body: ModeUpdateBody, user: dict = Depends(get_current_user)
+):
+    if body.mode not in ("normal", "fast"):
+        raise HTTPException(status_code=400, detail="mode must be 'normal' or 'fast'")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE conversations SET mode = $1 WHERE id = $2 AND user_id = $3",
+            body.mode, conv_id, user["user_id"],
+        )
+    return {"ok": True}

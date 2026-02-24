@@ -115,8 +115,33 @@ Tool → URL mapping:
   - scrape_webpage on guba.eastmoney.com → https://guba.eastmoney.com/
   - lookup_data_sources → use the URL that was looked up
   - run_ta_script → https://pypi.org/project/pandas-ta/
+  - fetch_cn_fund_data → https://akshare.akfamily.xyz/data/fund/fund_public.html
+  - run_fund_chart_script → https://akshare.akfamily.xyz/data/fund/fund_public.html
   - lookup_ta_strategy / save_ta_strategy / update_ta_strategy → (internal knowledge base, no citation needed)
 Number references in order of first appearance."""
+
+
+def get_fast_system_prompt() -> str:
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    return f"""你是一位金融研究助手。用精简、直接的语言回答——像一份简报，不要废话。不用 emoji，不用感叹号。今天是 {date_str}。
+
+**重要**：思考完毕后，必须在 </think> 标签之外写出最终回答。不得只输出 <think> 块而不给出回答。
+
+## 回答规则
+
+- 直接给出核心信息，不超过 200 字。如有数据，引用来源（仅 URL）。
+- **在每次回答末尾**（仅金融类问题），用一段话列出你能提供的深度分析能力，从下列中选取与问题相关的 2–4 项：
+  > 想要深度分析？切换到思考模式后我可以：历史K线图与技术指标（MACD/RSI/KDJ）、完整财务报表（资产负债表/利润表/现金流）、主力资金流向、北向资金、前十大股东变动、股息历史、ETF/基金历史净值与走势图、行业龙虎榜、市场热点扫描、多股对比。
+- 如果问题是闲聊（非金融），直接自然回答，**不加**深度分析提示。
+
+## 引用
+
+每条用到的数据后注明编号 [1]，结尾：
+
+[references]
+[1] https://url
+[/references]"""
 
 
 def get_planning_prompt() -> str:
@@ -141,6 +166,10 @@ finance → 调用任何工具前，输出研究计划（中文，400字内）�
 - 财报/年报/季报 → fetch_company_report（优先最新季报；需历史趋势时年报与季报并行调用，切勿单独调用年报）
 - 深度财务比率（ROE分解/现金质量/存货周转）→ fetch_baostock_financials
 - 深度单股 → 并行：fetch_stock_financials + fetch_baostock_financials + fetch_cn_stock_data + fetch_stock_capital_flow + fetch_top_shareholders + fetch_dividend_history
+- 基金历史价格/价格走势（ETF/LOF） → fetch_cn_fund_data(data_type="price") + generate_chart
+- 基金历史净值/净值走势（开放式/混合/货币型） → fetch_cn_fund_data(data_type="nav") + generate_chart
+- ETF/LOF 技术分析图（K线/MACD/RSI等） → fetch_cn_fund_data(data_type="price") + run_fund_chart_script
+- 基金持仓（股票持仓） → fetch_cn_fund_holdings（已有工具）
 - 技术分析 → lookup_ta_strategy → （未找到则 web_search + save_ta_strategy）→ run_ta_script
 - 简单价格走势图 → fetch_ohlcv + generate_chart（更快，无需 run_ta_script）
 - 买卖建议 → analyze_trade_opportunity（禁止手动拼凑）
