@@ -78,7 +78,7 @@ A full-stack AI-powered financial research platform for Chinese A-share and US m
 
 | Model | Provider | Role |
 |---|---|---|
-| **MiniMax-M1-80k** | Fireworks AI (default) or MiniMax official | Primary agent loop, planning, debate judge, bull arguments, executive summary |
+| **MiniMax-M2.5** | Fireworks AI (default) or MiniMax official | Primary agent loop, planning, debate judge, bull arguments, executive summary |
 | **qwen-plus** | Alibaba DashScope | Debate bear-side arguments |
 | **grok-4-1-fast-non-reasoning** | X.ai | Fast mode (built-in web search), web search fallback |
 
@@ -251,12 +251,12 @@ Create a `.env` file in the project root:
 MINIMAX_API_KEY=your_minimax_api_key
 MINIMAX_PROVIDER=fireworks              # "fireworks" (default) or "minimax"
 MINIMAX_BASE_URL=https://api.minimaxi.chat/v1
-MINIMAX_MODEL=MiniMax-M1-80k
+MINIMAX_MODEL=MiniMax-M2.5
 
 # ── Fireworks (MiniMax via Fireworks) ───────────────────────────────────────
 FIREWORKS_API_KEY=your_fireworks_api_key
 FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
-FIREWORKS_MINIMAX_MODEL=accounts/fireworks/models/minimax-m2p1
+FIREWORKS_MINIMAX_MODEL=accounts/fireworks/models/minimax-m2p5
 
 # ── Qwen (Debate Bear Side) ─────────────────────────────────────────────────
 QWEN_API_KEY=your_dashscope_api_key
