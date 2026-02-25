@@ -538,7 +538,7 @@ RULES:
   - 中国移动 = China Mobile = 600941
   - 中国电信 = China Telecom = 601728
   - 中国联通 = China Unicom = 600050
-  If the company name is ambiguous or not in this list, prefer fetching the quote first to confirm before building the full plan.
+  If the user provided a 6-digit stock code, use it directly — codes are unambiguous. Only use web_search to confirm identity when given an ambiguous company name that is NOT in this list and no code was provided.
 
 USER QUESTION: __QUESTION__
 """
@@ -754,14 +754,16 @@ async def _llm_call_with_tools(
         use_tools = round_idx < MAX_DEBATER_TOOL_ROUNDS
 
         try:
+            kwargs = dict(
+                model=model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=4000,
+            )
+            if use_tools:
+                kwargs["tools"] = tool_schemas
             resp = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=4000,
-                    tools=tool_schemas if use_tools else None,
-                ),
+                client.chat.completions.create(**kwargs),
                 timeout=90,
             )
         except asyncio.TimeoutError:
