@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-02-25 — Parallel OHLCV update with per-stock date checking
+
+**What:** Rewrote update_ohlcv.py to check each stock's individual latest timestamp, run 10 parallel worker threads, and display a tqdm progress bar.
+
+**Files:**
+- `data/update_ohlcv.py` — modified
+
+**Details:**
+- Per-stock start dates via `SELECT code, MAX(ts)::date FROM ohlcv_5m GROUP BY code`
+- ThreadPoolExecutor(max_workers=10); each thread owns its own baostock login + psycopg2 connection via threading.local()
+- tqdm progress bar; errors collected and printed as a summary after completion
+- tqdm already present in environment
+
 ## 2026-02-24 — Fast Mode (new default)
 
 **What:** Added Fast Mode as the default conversation mode — quick responses in <5s using web_search/scrape_webpage only, ending with a capability offer. Users can switch to Thinking Mode (formerly "normal") in-place via a button in the mode indicator strip, or create a Thinking Mode conversation from the sidebar.
