@@ -230,10 +230,10 @@ def _setup_pdf_fonts(pdf: FPDF) -> tuple[str, str]:
 
 
 # --- Colors ---
-_CLR_PRIMARY = (22, 42, 72)       # dark navy — titles
-_CLR_ACCENT = (45, 100, 160)      # steel blue — headings
-_CLR_TEXT = (40, 40, 40)           # near-black body text
-_CLR_MUTED = (110, 110, 110)      # grey — footer, captions
+_CLR_PRIMARY = (10, 25, 55)       # dark navy — titles
+_CLR_ACCENT = (25, 75, 145)       # steel blue — headings
+_CLR_TEXT = (15, 15, 15)          # near-black body text
+_CLR_MUTED = (100, 100, 100)      # grey — footer, captions
 _CLR_TABLE_HEAD = (235, 240, 248) # light blue-grey header bg
 _CLR_TABLE_ALT = (245, 247, 250)  # very light alternating row
 _CLR_RULE = (180, 195, 215)       # subtle separator lines
@@ -484,6 +484,7 @@ async def generate_pdf(title: str, content: str) -> dict:
                             pdf.set_font(font_family, "", 9)
                             pdf.set_text_color(*_CLR_MUTED)
                             pdf.cell(0, 5, caption, align="C")
+                            pdf.set_text_color(*_CLR_TEXT)
                             pdf.ln(6)
                     except Exception as e:
                         print(f"Failed to add image {img_path}: {e}")
